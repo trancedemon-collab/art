@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Savings Runway Calculator</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --accent-danger: #f87171;
+      --accent-success: #4ade80;
+      --border: #334155;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1.5rem; }
+    .card { background-color: var(--card-bg); width: 100%; max-width: 500px; border-radius: 12px; border: 1px solid var(--border); padding: 2rem; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    h1 { font-size: 1.35rem; margin-bottom: 0.35rem; font-weight: 600; text-align: center; }
+    p.subtitle { font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; }
+    
+    .input-group { margin-bottom: 1.15rem; }
+    label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--text-muted); }
+    input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background-color: #0b1120; color: var(--text); font-size: 1rem; outline: none; transition: border-color 0.2s; }
+    input:focus { border-color: var(--primary); }
+
+    .burn-rate { text-align: center; padding: 0.65rem; border-radius: 8px; margin: 1.25rem 0 1rem 0; font-size: 0.9rem; font-weight: 500; background: #0b1120; }
+    
+    .result-box { 
+      background-color: #0b1120; 
+      border: 1px solid var(--border); 
+      border-radius: 8px; 
+      padding: 1.25rem 1rem; 
+      text-align: center; 
+      font-size: 1.05rem; 
+      font-weight: 600; 
+      color: var(--primary);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>Savings Runway Calculator</h1>
+    <p class="subtitle">Estimate how long your current funds will last</p>
+
+    <div class="input-group">
+      <label for="savings">Total Current Savings</label>
+      <input type="number" id="savings" value="100000" min="0" step="any">
+    </div>
+
+    <div class="input-group">
+      <label for="income">Monthly Income / Earnings</label>
+      <input type="number" id="income" value="25000" min="0" step="any">
+    </div>
+
+    <div class="input-group">
+      <label for="expenses">Monthly Living Expenses</label>
+      <input type="number" id="expenses" value="35000" min="0" step="any">
+    </div>
+
+    <div id="burn-container" class="burn-rate"></div>
+    <div id="result" class="result-box"></div>
+  </div>
+
+  <script>
+    const savingsEl = document.getElementById('savings');
+    const incomeEl = document.getElementById('income');
+    const expensesEl = document.getElementById('expenses');
+    const burnContainer = document.getElementById('burn-container');
+    const resultEl = document.getElementById('result');
+
+    function calculateRunway() {
+      const savings = parseFloat(savingsEl.value) || 0;
+      const income = parseFloat(incomeEl.value) || 0;
+      const expenses = parseFloat(expensesEl.value) || 0;
+
+      const netBurn = expenses - income;
+
+      if (savings <= 0) {
+        burnContainer.innerHTML = `<span style="color: var(--accent-danger)">No remaining savings</span>`;
+        resultEl.innerHTML = `You have <span style="color: #fff">0 years 0 months 0 weeks 0 days</span> left to exhaust your savings.`;
+        return;
+      }
+
+      if (netBurn <= 0) {
+        burnContainer.innerHTML = `<span style="color: var(--accent-success)">Net Monthly Surplus: +${Math.abs(netBurn).toLocaleString()}</span>`;
+        resultEl.innerHTML = `<span style="color: var(--accent-success)">Your earnings cover or exceed your expenses. Your savings will not deplete.</span>`;
+        return;
+      }
+
+      burnContainer.innerHTML = `<span style="color: var(--accent-danger)">Net Monthly Deficit: -${netBurn.toLocaleString()}</span>`;
+
+      // Total days based on net daily burn rate (365.25 / 12 = 30.4375 days/month)
+      let totalDays = Math.floor((savings / netBurn) * 30.4375);
+
+      const years = Math.floor(totalDays / 365.25);
+      let remDays = totalDays % 365.25;
+
+      const months = Math.floor(remDays / 30.4375);
+      remDays = remDays % 30.4375;
+
+      const weeks = Math.floor(remDays / 7);
+      const days = Math.floor(remDays % 7);
+
+      resultEl.innerHTML = `You have <span style="color: #fff">${years} years ${months} months ${weeks} weeks ${days} days</span> left to exhaust your savings.`;
+    }
+
+    [savingsEl, incomeEl, expensesEl].forEach(input => {
+      input.addEventListener('input', calculateRunway);
+    });
+
+    calculateRunway();
+  </script>
+</body>
+  </html>
+  
