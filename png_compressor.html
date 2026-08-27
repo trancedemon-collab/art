@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PNG Batch Compressor (~1MB)</title>
+  <style>
+    :root {
+      --bg: #1e1e2e;
+      --card: #252538;
+      --accent: #89b4fa;
+      --text: #cdd6f4;
+      --subtext: #a6adc8;
+      --border: #313244;
+      --success: #a6e3a1;
+      --warning: #f9e2af;
+    }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      max-width: 800px;
+      width: 100%;
+    }
+    .drop-zone {
+      border: 2px dashed var(--accent);
+      border-radius: 8px;
+      padding: 2.5rem;
+      text-align: center;
+      background: var(--card);
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .drop-zone:hover {
+      background: #2a2a40;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .list {
+      margin-top: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.8rem 1.2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .item-name {
+      font-weight: bold;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .item-status {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .btn {
+      background: var(--accent);
+      color: #11111b;
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      text-decoration: none;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .badge {
+      color: var(--subtext);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>PNG Bulk Compressor (~1MB)</h2>
+  <div class="drop-zone" id="dropZone">
+    <p>Click or drag & drop PNG files or folders here</p>
+    <input type="file" id="fileInput" accept="image/png" multiple>
+  </div>
+
+  <div class="list" id="fileList"></div>
+</div>
+
+<script>
+  const TARGET_BYTES = 1 * 1024 * 1024; // 1 MB target
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileList = document.getElementById('fileList');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = '#2a2a40'; });
+  dropZone.addEventListener('dragleave', () => { dropZone.style.background = 'var(--card)'; });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.style.background = 'var(--card)';
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+  async function handleFiles(files) {
+    for (const file of files) {
+      if (file.type !== "image/png") continue;
+      await processImage(file);
+    }
+  }
+
+  async function processImage(file) {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'item';
+    itemEl.innerHTML = `
+      <div class="item-name">${file.name}</div>
+      <div class="item-status" id="status-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">
+        <span class="badge">${(file.size / (1024 * 1024)).toFixed(2)} MB &rarr; Processing...</span>
+      </div>
+    `;
+    fileList.appendChild(itemEl);
+
+    const statusContainer = itemEl.querySelector('.item-status');
+
+    // Skip compression if already under target
+    if (file.size <= TARGET_BYTES) {
+      statusContainer.innerHTML = `<span class="badge" style="color: var(--success);">${(file.size / (1024 * 1024)).toFixed(2)} MB (Already ≤ 1MB)</span>`;
+      return;
+    }
+
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    await new Promise(r => img.onload = r);
+
+    let scale = 0.95;
+    let finalBlob = null;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Binary search / iterative scaling loop down to <= 1MB
+    while (scale > 0.1) {
+      const w = Math.floor(img.width * scale);
+      const h = Math.floor(img.height * scale);
+
+      canvas.width = w;
+      canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      finalBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (finalBlob.size <= TARGET_BYTES) break;
+      scale -= 0.05;
+    }
+
+    URL.revokeObjectURL(img.src);
+
+    const finalUrl = URL.createObjectURL(finalBlob);
+    const finalSizeMB = (finalBlob.size / (1024 * 1024)).toFixed(2);
+
+    statusContainer.innerHTML = `
+      <span class="badge" style="color: var(--success);">${finalSizeMB} MB</span>
+      <a class="btn" href="${finalUrl}" download="compressed_${file.name}">Download</a>
+    `;
+  }
+</script>
+
+</body>
+</html>
