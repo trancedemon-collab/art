@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto" data-tab-position="top">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GTK Application Hub</title>
+  <style>
+    /* ============================================================
+       GTK Adwaita Color Tokens & Base Variables
+       ============================================================ */
+    :root {
+      --font-family: system-ui, -apple-system, "Cantarell", "Segoe UI", Roboto, Ubuntu, sans-serif;
+      --radius-s: 6px;
+      --radius-m: 9px;
+      --radius-l: 12px;
+      --transition: 0.15s ease-in-out;
+      --header-height: 48px;
+      --sidebar-width: 210px;
+    }
+
+    /* Light Theme Palette */
+    :root,
+    [data-theme="light"] {
+      --bg-base: #f6f5f4;
+      --bg-header: #ffffff;
+      --bg-tab-bar: #ebe8e5;
+      --bg-tab: #ded9d4;
+      --bg-tab-active: #ffffff;
+      --bg-tab-hover: #e4e0dc;
+      --bg-button: #e1ded9;
+      --bg-button-hover: #d5d1cb;
+      --bg-button-active: #c7c2bb;
+      --accent: #3584e4;
+      --accent-hover: #1c71d8;
+      --accent-fg: #ffffff;
+      --fg-primary: #2e3436;
+      --fg-secondary: #5e5c64;
+      --border: #d0cdc7;
+      --card-bg: #ffffff;
+      --danger: #e01b24;
+      --danger-hover: #c01c28;
+    }
+
+    /* Dark Theme Palette */
+    [data-theme="dark"] {
+      --bg-base: #1e1e1e;
+      --bg-header: #242424;
+      --bg-tab-bar: #181818;
+      --bg-tab: #2a2a2a;
+      --bg-tab-active: #353535;
+      --bg-tab-hover: #303030;
+      --bg-button: #383838;
+      --bg-button-hover: #454545;
+      --bg-button-active: #505050;
+      --accent: #3584e4;
+      --accent-hover: #62a0ea;
+      --accent-fg: #ffffff;
+      --fg-primary: #deddda;
+      --fg-secondary: #9a9996;
+      --border: #333333;
+      --card-bg: #282828;
+      --danger: #c01c28;
+      --danger-hover: #e01b24;
+    }
+
+    /* Auto / System Preference */
+    @media (prefers-color-scheme: dark) {
+      [data-theme="auto"] {
+        --bg-base: #1e1e1e;
+        --bg-header: #242424;
+        --bg-tab-bar: #181818;
+        --bg-tab: #2a2a2a;
+        --bg-tab-active: #353535;
+        --bg-tab-hover: #303030;
+        --bg-button: #383838;
+        --bg-button-hover: #454545;
+        --bg-button-active: #505050;
+        --accent: #3584e4;
+        --accent-hover: #62a0ea;
+        --accent-fg: #ffffff;
+        --fg-primary: #deddda;
+        --fg-secondary: #9a9996;
+        --border: #333333;
+        --card-bg: #282828;
+        --danger: #c01c28;
+        --danger-hover: #e01b24;
+      }
+    }
+
+    /* ============================================================
+       Layout & Reset
+       ============================================================ */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-base);
+      color: var(--fg-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* GTK HeaderBar */
+    .headerbar {
+      height: var(--header-height);
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .header-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Buttons & Selects */
+    .btn {
+      background: var(--bg-button);
+      color: var(--fg-primary);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: var(--radius-s);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .btn:hover { background: var(--bg-button-hover); }
+    .btn:active { background: var(--bg-button-active); }
+
+    .btn-suggested {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: 1px solid var(--accent);
+    }
+    .btn-suggested:hover { background: var(--accent-hover); }
+
+    select.btn {
+      padding-right: 24px;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 5 5-5z' fill='%23888888'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+
+    /* ============================================================
+       Workspace & Tab System Layouts
+       ============================================================ */
+    .workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .tab-bar {
+      background: var(--bg-tab-bar);
+      display: flex;
+      gap: 4px;
+      padding: 6px;
+      overflow: auto;
+      scrollbar-width: thin;
+      flex-shrink: 0;
+    }
+
+    .tab-item {
+      background: var(--bg-tab);
+      color: var(--fg-secondary);
+      border: 1px solid transparent;
+      border-radius: var(--radius-s);
+      padding: 6px 10px;
+      font-size: 12.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all var(--transition);
+    }
+
+    .tab-item:hover {
+      background: var(--bg-tab-hover);
+      color: var(--fg-primary);
+    }
+
+    .tab-item.active {
+      background: var(--bg-tab-active);
+      color: var(--fg-primary);
+      border-color: var(--border);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    .tab-close {
+      border: none;
+      background: transparent;
+      color: inherit;
+      opacity: 0.6;
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .tab-close:hover {
+      opacity: 1;
+      background: rgba(128, 128, 128, 0.25);
+    }
+
+    /* Tab Orientations */
+    [data-tab-position="top"] .workspace {
+      flex-direction: column;
+    }
+    [data-tab-position="top"] .tab-bar {
+      flex-direction: row;
+      border-bottom: 1px solid var(--border);
+    }
+
+    [data-tab-position="left"] .workspace {
+      flex-direction: row;
+    }
+    [data-tab-position="left"] .tab-bar {
+      flex-direction: column;
+      width: var(--sidebar-width);
+      border-right: 1px solid var(--border);
+    }
+
+    [data-tab-position="right"] .workspace {
+      flex-direction: row-reverse;
+    }
+    [data-tab-position="right"] .tab-bar {
+      flex-direction: column;
+      width: var(--sidebar-width);
+      border-left: 1px solid var(--border);
+    }
+
+    /* Container for dynamic iframes */
+    .viewport {
+      flex: 1;
+      height: 100%;
+      background: var(--bg-base);
+      position: relative;
+    }
+
+    .app-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: none;
+      background: #ffffff;
+    }
+
+    .app-frame.active {
+      display: block;
+    }
+
+    /* Empty state */
+    .empty-state {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg-secondary);
+      text-align: center;
+      gap: 12px;
+    }
+
+    /* ============================================================
+       GTK Dialog / Modal Styles
+       ============================================================ */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition);
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .dialog {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-l);
+      width: 420px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .dialog h3 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--fg-secondary);
+    }
+
+    .entry {
+      background: var(--bg-base);
+      color: var(--fg-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-s);
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+    .entry:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(53, 132, 228, 0.2);
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- GTK HeaderBar -->
+  <header class="headerbar">
+    <div class="header-title">
+      <span>🗔</span> GTK App Hub
+    </div>
+    <div class="header-controls">
+      <button class="btn btn-suggested" id="btnAddTab">+ Add App</button>
+      
+      <!-- Tab Orientation Selector -->
+      <select id="selectPosition" class="btn" title="Tabs Alignment">
+        <option value="top">Top Tabs</option>
+        <option value="left">Left Sidebar</option>
+        <option value="right">Right Sidebar</option>
+      </select>
+
+      <!-- Theme Selector -->
+      <select id="selectTheme" class="btn" title="GTK Theme Mode">
+        <option value="auto">Auto Theme</option>
+        <option value="light">Light Theme</option>
+        <option value="dark">Dark Theme</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- Main View -->
+  <main class="workspace">
+    <nav class="tab-bar" id="tabBar"></nav>
+    <div class="viewport" id="viewport">
+      <div class="empty-state" id="emptyState">
+        <div style="font-size: 32px;">📦</div>
+        <div>No apps currently open.</div>
+        <button class="btn btn-suggested" onclick="openAddModal()">Add your first app</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Add App Modal Dialog -->
+  <div class="modal-overlay" id="addModal">
+    <div class="dialog">
+      <h3>Add Application</h3>
+      <div class="field-group">
+        <label for="appName">App Name</label>
+        <input type="text" id="appName" class="entry" placeholder="e.g. SceneScript Studio" />
+      </div>
+      <div class="field-group">
+        <label for="appUrl">App / GitHub Pages URL</label>
+        <input type="url" id="appUrl" class="entry" placeholder="https://username.github.io/app/" />
+      </div>
+      <div class="dialog-actions">
+        <button class="btn" id="btnCancelAdd">Cancel</button>
+        <button class="btn btn-suggested" id="btnConfirmAdd">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State keys for LocalStorage
+    const STORAGE_KEY_APPS = "gtk_hub_apps_data";
+    const STORAGE_KEY_THEME = "gtk_hub_theme";
+    const STORAGE_KEY_POS = "gtk_hub_tab_position";
+    const STORAGE_KEY_ACTIVE = "gtk_hub_active_tab";
+
+    // Application state
+    let apps = JSON.parse(localStorage.getItem(STORAGE_KEY_APPS)) || [
+      { id: "1", name: "Wikipedia Demo", url: "https://en.m.wikipedia.org" }
+    ];
+    let activeTabId = localStorage.getItem(STORAGE_KEY_ACTIVE) || (apps[0] ? apps[0].id : null);
+
+    // DOM Elements
+    const root = document.documentElement;
+    const tabBar = document.getElementById("tabBar");
+    const viewport = document.getElementById("viewport");
+    const emptyState = document.getElementById("emptyState");
+    const selectTheme = document.getElementById("selectTheme");
+    const selectPos = document.getElementById("selectPosition");
+    const addModal = document.getElementById("addModal");
+    const appNameInput = document.getElementById("appName");
+    const appUrlInput = document.getElementById("appUrl");
+
+    // Initialize Preferences
+    function initPreferences() {
+      const savedTheme = localStorage.getItem(STORAGE_KEY_THEME) || "auto";
+      const savedPos = localStorage.getItem(STORAGE_KEY_POS) || "top";
+
+      root.setAttribute("data-theme", savedTheme);
+      root.setAttribute("data-tab-position", savedPos);
+      selectTheme.value = savedTheme;
+      selectPos.value = savedPos;
+    }
+
+    // Save and Sync Data
+    function persistData() {
+      localStorage.setItem(STORAGE_KEY_APPS, JSON.stringify(apps));
+      localStorage.setItem(STORAGE_KEY_ACTIVE, activeTabId || "");
+    }
+
+    // Render Tab Elements and Frames
+    function renderTabs() {
+      tabBar.innerHTML = "";
+      
+      // Remove frames not in state
+      const currentFrames = document.querySelectorAll(".app-frame");
+      currentFrames.forEach(frame => {
+        const frameId = frame.getAttribute("data-frame-id");
+        if (!apps.some(a => a.id === frameId)) {
+          frame.remove();
+        }
+      });
+
+      if (apps.length === 0) {
+        emptyState.style.display = "flex";
+        activeTabId = null;
+        persistData();
+        return;
+      }
+
+      emptyState.style.display = "none";
+
+      // If activeTab is missing or invalid, default to the first one
+      if (!apps.some(a => a.id === activeTabId)) {
+        activeTabId = apps[0].id;
+      }
+
+      apps.forEach(app => {
+        // 1. Create Tab Element
+        const tabEl = document.createElement("div");
+        tabEl.className = `tab-item ${app.id === activeTabId ? "active" : ""}`;
+        tabEl.title = `${app.name} (${app.url})`;
+        tabEl.innerHTML = `
+          <span>${escapeHtml(app.name)}</span>
+          <button class="tab-close" title="Close App">✕</button>
+        `;
+
+        // Switch Tab Click
+        tabEl.addEventListener("click", (e) => {
+          if (e.target.classList.contains("tab-close")) return;
+          setActiveTab(app.id);
+        });
+
+        // Delete Tab Click
+        const closeBtn = tabEl.querySelector(".tab-close");
+        closeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteTab(app.id);
+        });
+
+        tabBar.appendChild(tabEl);
+
+        // 2. Ensure Iframe Exists (preserves state without reloading)
+        let frame = document.querySelector(`.app-frame[data-frame-id="${app.id}"]`);
+        if (!frame) {
+          frame = document.createElement("iframe");
+          frame.className = "app-frame";
+          frame.setAttribute("data-frame-id", app.id);
+          frame.src = app.url;
+          frame.loading = "lazy";
+          viewport.appendChild(frame);
+        }
+
+        // Toggle active iframe visibility
+        if (app.id === activeTabId) {
+          frame.classList.add("active");
+        } else {
+          frame.classList.remove("active");
+        }
+      });
+
+      persistData();
+    }
+
+    function setActiveTab(id) {
+      activeTabId = id;
+      renderTabs();
+    }
+
+    function deleteTab(id) {
+      const idx = apps.findIndex(a => a.id === id);
+      if (idx !== -1) {
+        apps.splice(idx, 1);
+        if (activeTabId === id) {
+          activeTabId = apps[Math.max(0, idx - 1)]?.id || null;
+        }
+        renderTabs();
+      }
+    }
+
+    function openAddModal() {
+      appNameInput.value = "";
+      appUrlInput.value = "";
+      addModal.classList.add("open");
+      appNameInput.focus();
+    }
+
+    function closeAddModal() {
+      addModal.classList.remove("open");
+    }
+
+    function handleAddApp() {
+      const name = appNameInput.value.trim() || "Untitled App";
+      let url = appUrlInput.value.trim();
+
+      if (!url) return;
+
+      if (!/^https?:\/\//i.test(url)) {
+        url = "https://" + url;
+      }
+
+      const newApp = {
+        id: "app_" + Date.now(),
+        name: name,
+        url: url
+      };
+
+      apps.push(newApp);
+      activeTabId = newApp.id;
+      closeAddModal();
+      renderTabs();
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // Event Listeners
+    document.getElementById("btnAddTab").addEventListener("click", openAddModal);
+    document.getElementById("btnCancelAdd").addEventListener("click", closeAddModal);
+    document.getElementById("btnConfirmAdd").addEventListener("click", handleAddApp);
+
+    appNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleAddApp(); });
+    appUrlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleAddApp(); });
+
+    selectTheme.addEventListener("change", (e) => {
+      root.setAttribute("data-theme", e.target.value);
+      localStorage.setItem(STORAGE_KEY_THEME, e.target.value);
+    });
+
+    selectPos.addEventListener("change", (e) => {
+      root.setAttribute("data-tab-position", e.target.value);
+      localStorage.setItem(STORAGE_KEY_POS, e.target.value);
+    });
+
+    // Boot
+    initPreferences();
+    renderTabs();
+  </script>
+</body>
+</html>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini Video Showcase (Low-Spec & Storage Managed)</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --card-bg: #ffffff;
+      --text: #2e3436;
+      --text-muted: #6e7173;
+      --border: #d3d7cf;
+      --header-bg: #ebebeb;
+      --primary: #3584e4;
+      --primary-hover: #1c71d8;
+      --danger: #e01b24;
+      --danger-hover: #c01c28;
+      --radius: 6px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #1e1e1e;
+      --card-bg: #282828;
+      --text: #eeeeec;
+      --text-muted: #9a9996;
+      --border: #383838;
+      --header-bg: #181818;
+      --primary: #3584e4;
+      --primary-hover: #62a0ea;
+      --danger: #e01b24;
+      --danger-hover: #ed333b;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]):not([data-theme="dark"]) {
+        --bg: #1e1e1e;
+        --card-bg: #282828;
+        --text: #eeeeec;
+        --text-muted: #9a9996;
+        --border: #383838;
+        --header-bg: #181818;
+        --primary: #3584e4;
+        --primary-hover: #62a0ea;
+        --danger: #e01b24;
+        --danger-hover: #ed333b;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+    header {
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .title-group { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 0.95rem; }
+    .storage-meter { font-size: 0.75rem; color: var(--text-muted); font-weight: normal; }
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    button, .file-label, select {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      font-size: 0.82rem;
+      cursor: pointer;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button:hover, .file-label:hover, select:hover { background: var(--header-bg); border-color: var(--text-muted); }
+    button.primary { background: var(--primary); color: #fff; border: none; }
+    button.primary:hover { background: var(--primary-hover); }
+    button.danger { background: var(--danger); color: #fff; border: none; }
+    button.danger:hover { background: var(--danger-hover); }
+
+    input[type="file"] { display: none; }
+
+    main { flex: 1; padding: 16px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .card.selected { outline: 2px solid var(--primary); }
+
+    .thumb-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      background: #111;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .thumb-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .select-checkbox {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      z-index: 2;
+    }
+
+    .card-footer {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .card-title {
+      font-size: 0.82rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: text;
+    }
+
+    .card-title[contenteditable="true"]:focus {
+      outline: 1px solid var(--primary);
+      background: var(--header-bg);
+      border-radius: 4px;
+      padding: 2px 4px;
+    }
+
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 50px 20px;
+      color: var(--text-muted);
+    }
+
+    /* Modal Player */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000000;
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      padding: 10px;
+    }
+
+    .modal.active { display: flex; }
+
+    .player-container {
+      position: relative;
+      width: 100%;
+      max-width: 90vw;
+      height: 82vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .player-container video {
+      position: absolute;
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: var(--radius);
+      outline: none;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .player-container video.active-layer {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-controls {
+      margin-top: 10px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      background: var(--card-bg);
+      padding: 6px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      font-size: 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-group">
+      <span>🎬 Gemini Reel Studio</span>
+      <span class="storage-meter" id="storageIndicator">Storage: 0 MB / 100 MB</span>
+    </div>
+    <div class="toolbar">
+      <label class="file-label primary">
+        ➕ Load MP4s
+        <input type="file" id="videoInput" accept="video/mp4,video/*" multiple />
+      </label>
+
+      <select id="themeSelect">
+        <option value="auto">Theme: Auto</option>
+        <option value="light">Theme: Light</option>
+        <option value="dark">Theme: Dark</option>
+      </select>
+
+      <button id="deleteSelectedBtn" class="danger" style="display: none;">Delete Selected (<span id="selCount">0</span>)</button>
+      <button id="nukeBtn" class="danger">☢️ Nuke All</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid" id="videoGrid"></div>
+  </main>
+
+  <div class="modal" id="playerModal">
+    <button class="modal-close" id="closeModal">✕</button>
+    <div class="player-container" id="playerStage">
+      <video id="vidA" playsinline preload="auto" class="active-layer"></video>
+      <video id="vidB" playsinline preload="auto"></video>
+    </div>
+    <div class="modal-controls">
+      <label style="font-size: 0.82rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+        <input type="checkbox" id="loopToggle" checked /> Loop Playback
+      </label>
+      <span style="font-size: 0.72rem; color: var(--text-muted);">[<b>F</b> Fullscreen | <b>Esc</b> Close]</span>
+    </div>
+  </div>
+
+  <script>
+    const DB_NAME = 'GeminiVideoDeck_Cap';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'videos';
+    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+    const MAX_STORAGE_BYTES = 100 * 1024 * 1024; // 100 MB ceiling
+
+    let db;
+    let currentVideos = [];
+    let selectedIds = new Set();
+    let currentBlobUrl = null;
+
+    const vidA = document.getElementById('vidA');
+    const vidB = document.getElementById('vidB');
+    const loopToggle = document.getElementById('loopToggle');
+    let activePlayer = vidA;
+    let standbyPlayer = vidB;
+    const pingPongThreshold = 0.15;
+
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const database = e.target.result;
+          if (!database.objectStoreNames.contains(STORE_NAME)) {
+            database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => { db = req.result; resolve(); };
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function getAllVideos() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function saveVideo(videoObj) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(videoObj);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function deleteVideos(ids) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        ids.forEach(id => store.delete(id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function clearAllVideos() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    function extractFirstFrame(file) {
+      return new Promise((resolve) => {
+        const tempVideo = document.createElement('video');
+        const url = URL.createObjectURL(file);
+        tempVideo.src = url;
+        tempVideo.muted = true;
+        tempVideo.preload = 'auto';
+
+        tempVideo.onloadeddata = () => {
+          tempVideo.currentTime = 0.01;
+        };
+
+        tempVideo.onseeked = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 180;
+          canvas.height = (tempVideo.videoHeight / tempVideo.videoWidth) * 180 || 320;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
+          const thumbData = canvas.toDataURL('image/jpeg', 0.6);
+          
+          URL.revokeObjectURL(url);
+          tempVideo.src = '';
+          tempVideo.load();
+          resolve(thumbData);
+        };
+
+        tempVideo.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve('');
+        };
+      });
+    }
+
+    // Storage Management: 48h TTL & 100MB FIFO Cleanup
+    async function loadAndPrune() {
+      let all = await getAllVideos();
+      const now = Date.now();
+      const expiredIds = [];
+      let valid = [];
+
+      // 1. Time-based purge (48h)
+      all.forEach(item => {
+        if (now - item.timestamp > TWO_DAYS_MS) {
+          expiredIds.push(item.id);
+        } else {
+          valid.push(item);
+        }
+      });
+
+      if (expiredIds.length > 0) {
+        await deleteVideos(expiredIds);
+      }
+
+      // Sort by oldest first for FIFO evaluation
+      valid.sort((a, b) => a.timestamp - b.timestamp);
+
+      // 2. Capacity-based purge (100MB Cap)
+      let totalSize = valid.reduce((sum, v) => sum + (v.size || (v.blob ? v.blob.size : 0)), 0);
+      const overflowIds = [];
+
+      while (totalSize > MAX_STORAGE_BYTES && valid.length > 0) {
+        const oldest = valid.shift();
+        overflowIds.push(oldest.id);
+        totalSize -= (oldest.size || (oldest.blob ? oldest.blob.size : 0));
+      }
+
+      if (overflowIds.length > 0) {
+        await deleteVideos(overflowIds);
+      }
+
+      currentVideos = valid.sort((a, b) => b.timestamp - a.timestamp);
+      updateStorageIndicator(totalSize);
+      renderGrid();
+    }
+
+    function updateStorageIndicator(usedBytes) {
+      const mbUsed = (usedBytes / (1024 * 1024)).toFixed(1);
+      document.getElementById('storageIndicator').textContent = `Storage: ${mbUsed} MB / 100 MB`;
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('videoGrid');
+      grid.innerHTML = '';
+
+      if (currentVideos.length === 0) {
+        grid.innerHTML = `<div class="empty-state">No videos loaded.<br><small>Videos are automatically pruned after 48 hours or when storage exceeds 100 MB.</small></div>`;
+        updateSelectionState();
+        return;
+      }
+
+      currentVideos.forEach(v => {
+        const card = document.createElement('div');
+        card.className = `card ${selectedIds.has(v.id) ? 'selected' : ''}`;
+
+        const sizeMb = ((v.size || 0) / (1024 * 1024)).toFixed(1);
+
+        card.innerHTML = `
+          <div class="thumb-wrapper" data-id="${v.id}">
+            <input type="checkbox" class="select-checkbox" data-id="${v.id}" ${selectedIds.has(v.id) ? 'checked' : ''} />
+            <img src="${v.thumb}" alt="${escapeHtml(v.title)}" loading="lazy" />
+          </div>
+          <div class="card-footer">
+            <div class="card-title" contenteditable="true" spellcheck="false" title="Click to rename" data-id="${v.id}">${escapeHtml(v.title)}</div>
+            <div class="card-meta">
+              <span>${formatExpiry(v.timestamp)} • ${sizeMb} MB</span>
+              <button class="danger" style="padding: 2px 6px; font-size: 0.7rem;" data-del="${v.id}">Delete</button>
+            </div>
+          </div>
+        `;
+
+        card.querySelector('.thumb-wrapper').addEventListener('click', (e) => {
+          if (e.target.classList.contains('select-checkbox')) return;
+          openPlayer(v.blob);
+        });
+
+        card.querySelector('.select-checkbox').addEventListener('change', (e) => {
+          if (e.target.checked) selectedIds.add(v.id);
+          else selectedIds.delete(v.id);
+          card.classList.toggle('selected', e.target.checked);
+          updateSelectionState();
+        });
+
+        const titleEl = card.querySelector('.card-title');
+        titleEl.addEventListener('blur', async () => {
+          const newName = titleEl.textContent.trim() || 'Untitled Video';
+          v.title = newName;
+          await saveVideo(v);
+        });
+        titleEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+        });
+
+        card.querySelector('[data-del]').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await deleteVideos([v.id]);
+          selectedIds.delete(v.id);
+          await loadAndPrune();
+        });
+
+        grid.appendChild(card);
+      });
+
+      updateSelectionState();
+    }
+
+    function formatExpiry(timestamp) {
+      const remaining = TWO_DAYS_MS - (Date.now() - timestamp);
+      const hours = Math.max(0, Math.floor(remaining / (1000 * 60 * 60)));
+      return `${hours}h left`;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    }
+
+    function updateSelectionState() {
+      const count = selectedIds.size;
+      const btn = document.getElementById('deleteSelectedBtn');
+      document.getElementById('selCount').textContent = count;
+      btn.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+
+    // --- Seamless Zero-Stutter Playback System ---
+    const modal = document.getElementById('playerModal');
+
+    function setupPlayerLooping(player, other) {
+      player.ontimeupdate = () => {
+        if (!loopToggle.checked) return;
+        if (player.duration && (player.duration - player.currentTime <= pingPongThreshold)) {
+          if (other.paused) {
+            other.currentTime = 0;
+            other.play().catch(() => {});
+          }
+        }
+      };
+
+      player.onended = () => {
+        if (loopToggle.checked) {
+          player.classList.remove('active-layer');
+          other.classList.add('active-layer');
+          activePlayer = other;
+          standbyPlayer = player;
+          standbyPlayer.pause();
+          standbyPlayer.currentTime = 0;
+        }
+      };
+    }
+
+    setupPlayerLooping(vidA, vidB);
+    setupPlayerLooping(vidB, vidA);
+
+    function openPlayer(blob) {
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = URL.createObjectURL(blob);
+
+      activePlayer = vidA;
+      standbyPlayer = vidB;
+
+      vidA.src = currentBlobUrl;
+      vidB.src = currentBlobUrl;
+
+      vidA.classList.add('active-layer');
+      vidB.classList.remove('active-layer');
+
+      modal.classList.add('active');
+      vidA.play();
+    }
+
+    function closePlayer() {
+      vidA.pause();
+      vidB.pause();
+      vidA.src = '';
+      vidB.src = '';
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = null;
+      }
+      modal.classList.remove('active');
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+    }
+
+    document.getElementById('closeModal').addEventListener('click', closePlayer);
+
+    window.addEventListener('keydown', (e) => {
+      if (!modal.classList.contains('active')) return;
+
+      if (e.key === 'Escape') {
+        closePlayer();
+      } else if (e.key === 'f' || e.key === 'F') {
+        const stage = document.getElementById('playerStage');
+        if (!document.fullscreenElement) {
+          stage.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen();
+        }
+      }
+    });
+
+    // File Ingestion with Metadata & Size Tracking
+    document.getElementById('videoInput').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        const thumb = await extractFirstFrame(file);
+        const item = {
+          id: 'vid_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          blob: file,
+          size: file.size,
+          thumb: thumb,
+          timestamp: Date.now()
+        };
+        await saveVideo(item);
+      }
+      e.target.value = '';
+      await loadAndPrune();
+    });
+
+    // Batch Actions
+    document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
+      if (confirm(`Delete ${selectedIds.size} selected video(s)?`)) {
+        await deleteVideos(Array.from(selectedIds));
+        selectedIds.clear();
+        await loadAndPrune();
+      }
+    });
+
+    document.getElementById('nukeBtn').addEventListener('click', async () => {
+      const confirmNuke = confirm("⚠️ NUKE ALL WARNING:\n\nThis will instantly delete ALL loaded videos from the canvas and storage. This action cannot be undone.\n\nProceed?");
+      if (confirmNuke) {
+        await clearAllVideos();
+        selectedIds.clear();
+        await loadAndPrune();
+      }
+    });
+
+    // GTK Theme Selector
+    const themeSelect = document.getElementById('themeSelect');
+    const storedTheme = localStorage.getItem('app_theme') || 'auto';
+    themeSelect.value = storedTheme;
+    applyTheme(storedTheme);
+
+    themeSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      localStorage.setItem('app_theme', val);
+      applyTheme(val);
+    });
+
+    function applyTheme(theme) {
+      if (theme === 'auto') {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+    }
+
+    initDB().then(loadAndPrune);
+  </script>
+</body>
+</html>
