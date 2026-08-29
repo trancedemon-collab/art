@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <title>Storyboard Builder</title>
+  <style>
+    :root {
+      --bg-color: #f6f5f4;
+      --card-bg: #ffffff;
+      --header-bg: #e4e1de;
+      --border-color: #dcd8d3;
+      --text-main: #2e3436;
+      --text-muted: #5e5c64;
+      --accent: #3584e4;
+      --accent-hover: #1c71d8;
+      --btn-bg: #deddda;
+      --btn-hover: #c0bfbc;
+      --radius: 8px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --bg-color: #242424;
+        --card-bg: #303030;
+        --header-bg: #1e1e1e;
+        --border-color: #3d3d3d;
+        --text-main: #eeeeec;
+        --text-muted: #9a9996;
+        --accent: #3584e4;
+        --accent-hover: #62a0ea;
+        --btn-bg: #3a3a3a;
+        --btn-hover: #484848;
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --bg-color: #242424;
+      --card-bg: #303030;
+      --header-bg: #1e1e1e;
+      --border-color: #3d3d3d;
+      --text-main: #eeeeec;
+      --text-muted: #9a9996;
+      --accent: #3584e4;
+      --accent-hover: #62a0ea;
+      --btn-bg: #3a3a3a;
+      --btn-hover: #484848;
+    }
+
+    :root[data-theme="light"] {
+      --bg-color: #f6f5f4;
+      --card-bg: #ffffff;
+      --header-bg: #e4e1de;
+      --border-color: #dcd8d3;
+      --text-main: #2e3436;
+      --text-muted: #5e5c64;
+      --accent: #3584e4;
+      --accent-hover: #1c71d8;
+      --btn-bg: #deddda;
+      --btn-hover: #c0bfbc;
+    }
+
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, Cantarell, Ubuntu, sans-serif; }
+    body { margin: 0; background: var(--bg-color); color: var(--text-main); display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* GTK HeaderBar */
+    header {
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .title { font-weight: 700; font-size: 1.1rem; }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    button, select, input[type="text"], input[type="number"] {
+      background: var(--btn-bg);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 7px 14px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    input[type="text"], input[type="number"] { cursor: text; background: var(--card-bg); }
+    button:hover { background: var(--btn-hover); }
+    button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+    button.primary:hover { background: var(--accent-hover); }
+
+    main { padding: 20px; display: flex; gap: 20px; flex: 1; flex-wrap: wrap; }
+    .sidebar { flex: 1; min-width: 320px; max-width: 480px; display: flex; flex-direction: column; gap: 12px; }
+    .preview-panel { flex: 2; min-width: 360px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border-color); padding: 16px; display: flex; flex-direction: column; align-items: center; }
+
+    .frame-list { display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 180px); overflow-y: auto; padding-right: 4px; }
+    .frame-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 10px; display: flex; gap: 10px; align-items: center; }
+    .frame-card img { width: 72px; height: 72px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-color); }
+    .frame-card-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+
+    #canvasPreview { max-width: 100%; height: auto; border: 1px solid var(--border-color); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title">🎬 Storyboard Creator</div>
+    <div class="controls">
+      <label for="themeSelect">Theme:</label>
+      <select id="themeSelect">
+        <option value="auto">System (Auto)</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+
+      <label for="colCount">Cols:</label>
+      <input type="number" id="colCount" value="3" min="1" max="8" style="width: 55px;">
+
+      <button class="primary" id="btnDownload">⬇ Download HD</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="sidebar">
+      <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+      <button onclick="document.getElementById('fileInput').click()">+ Load Sequence of Images</button>
+      
+      <div class="frame-list" id="frameList"></div>
+    </section>
+
+    <section class="preview-panel">
+      <canvas id="canvasPreview"></canvas>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      frames: [], // { img, caption, label }
+      cols: 3,
+      canvasWidth: 3840, // 4K UHD base width
+      padding: 60,
+      gap: 40,
+      fontSize: 34
+    };
+
+    const themeSelect = document.getElementById('themeSelect');
+    themeSelect.addEventListener('change', (e) => {
+      document.documentElement.setAttribute('data-theme', e.target.value);
+      renderStoryboard();
+    });
+
+    document.getElementById('colCount').addEventListener('input', (e) => {
+      state.cols = Math.max(1, parseInt(e.target.value) || 1);
+      renderStoryboard();
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.src = url;
+        await new Promise(r => img.onload = r);
+        state.frames.push({ img, caption: '', name: file.name });
+      }
+      renderUIList();
+      renderStoryboard();
+    });
+
+    function renderUIList() {
+      const list = document.getElementById('frameList');
+      list.innerHTML = '';
+      state.frames.forEach((frame, idx) => {
+        const card = document.createElement('div');
+        card.className = 'frame-card';
+
+        const thumb = document.createElement('img');
+        thumb.src = frame.img.src;
+
+        const body = document.createElement('div');
+        body.className = 'frame-card-body';
+
+        const title = document.createElement('span');
+        title.style.fontSize = '0.8rem';
+        title.style.color = 'var(--text-muted)';
+        title.innerText = `Frame #${idx + 1}`;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Optional caption...';
+        input.value = frame.caption;
+        input.oninput = (e) => {
+          frame.caption = e.target.value;
+          renderStoryboard();
+        };
+
+        body.appendChild(title);
+        body.appendChild(input);
+        card.appendChild(thumb);
+        card.appendChild(body);
+        list.appendChild(card);
+      });
+    }
+
+    function renderStoryboard() {
+      const canvas = document.getElementById('canvasPreview');
+      const ctx = canvas.getContext('2d');
+
+      if (!state.frames.length) {
+        canvas.width = 1200;
+        canvas.height = 675;
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || "#242424";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#888";
+        ctx.font = "24px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("Load images to generate HD storyboard", canvas.width / 2, canvas.height / 2);
+        return;
+      }
+
+      const totalFrames = state.frames.length;
+      const cols = state.cols;
+      const rows = Math.ceil(totalFrames / cols);
+
+      const targetRatio = 16 / 9;
+      const totalGapsX = (cols - 1) * state.gap;
+      const availableW = state.canvasWidth - (state.padding * 2) - totalGapsX;
+      const frameW = availableW / cols;
+      const frameH = frameW / targetRatio;
+      const captionSpace = 90;
+
+      const totalH = (state.padding * 2) + (rows * (frameH + captionSpace)) + ((rows - 1) * state.gap);
+
+      canvas.width = state.canvasWidth;
+      canvas.height = totalH;
+
+      const isDark = getComputedStyle(document.documentElement).getPropertyValue('--bg-color').trim().includes('36') || 
+                     window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+      // Board Background
+      ctx.fillStyle = isDark ? "#181818" : "#f0ede9";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      state.frames.forEach((frame, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+
+        const x = state.padding + col * (frameW + state.gap);
+        const y = state.padding + row * (frameH + captionSpace + state.gap);
+
+        // Frame Outer Border
+        ctx.fillStyle = isDark ? "#282828" : "#ffffff";
+        ctx.strokeStyle = isDark ? "#444444" : "#cccccc";
+        ctx.lineWidth = 4;
+        ctx.fillRect(x, y, frameW, frameH);
+        ctx.strokeRect(x, y, frameW, frameH);
+
+        // Draw Image (Cover fit inside the box)
+        const img = frame.img;
+        const imgRatio = img.width / img.height;
+        let sW, sH, sx = 0, sy = 0;
+
+        if (imgRatio > targetRatio) {
+          sH = img.height;
+          sW = img.height * targetRatio;
+          sx = (img.width - sW) / 2;
+        } else {
+          sW = img.width;
+          sH = img.width / targetRatio;
+          sy = (img.height - sH) / 2;
+        }
+
+        ctx.drawImage(img, sx, sy, sW, sH, x + 2, y + 2, frameW - 4, frameH - 4);
+
+        // Number Badge
+        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.fillRect(x, y, 60, 36);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 20px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(`${idx + 1}`, x + 30, y + 26);
+
+        // Caption Text
+        if (frame.caption.trim()) {
+          ctx.fillStyle = isDark ? "#ffffff" : "#222222";
+          ctx.font = `${state.fontSize}px system-ui`;
+          ctx.textAlign = "center";
+          ctx.fillText(frame.caption, x + (frameW / 2), y + frameH + 48, frameW - 20);
+        }
+      });
+    }
+
+    document.getElementById('btnDownload').addEventListener('click', () => {
+      const canvas = document.getElementById('canvasPreview');
+      const link = document.createElement('a');
+      link.download = `storyboard_${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
+    });
+
+    renderStoryboard();
+  </script>
+</body>
+</html>
