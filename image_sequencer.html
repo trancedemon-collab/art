@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Sequencer</title>
+  <!-- Libraries for GIF & MP4 generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.4/build/mp4-muxer.min.js"></script>
+
+  <style>
+    /* ================= GTK / Libadwaita Design System ================= */
+    :root {
+      --window-bg: #fafafa;
+      --card-bg: #ffffff;
+      --card-border: #dedede;
+      --text-color: #2e3436;
+      --text-muted: #77767b;
+      --accent-color: #3584e4;
+      --accent-hover: #1c71d8;
+      --destructive: #e01b24;
+      --header-bg: #f6f6f6;
+      --input-bg: #f0f0f0;
+      --radius: 10px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --window-bg: #1e1e1e;
+        --card-bg: #2d2d2d;
+        --card-border: #3d3d3d;
+        --text-color: #ffffff;
+        --text-muted: #9a9996;
+        --accent-color: #3584e4;
+        --accent-hover: #62a0ea;
+        --destructive: #c01c28;
+        --header-bg: #242424;
+        --input-bg: #383838;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, "Cantarell", "Segoe UI", Roboto, sans-serif; }
+    
+    body { 
+      background: var(--window-bg); 
+      color: var(--text-color); 
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HeaderBar */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--header-bg);
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--card-border);
+      height: 52px;
+    }
+    .header-bar h1 { font-size: 1rem; font-weight: 700; }
+
+    /* Layout Shell */
+    .app-workspace {
+      display: grid;
+      grid-template-columns: minmax(360px, 420px) 1fr;
+      flex: 1;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    @media (max-width: 900px) {
+      .app-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+      }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--card-bg);
+      border-right: 1px solid var(--card-border);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+
+    /* Output Stage */
+    .main-stage {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--window-bg);
+      overflow-y: auto;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Drop Zone */
+    .dropzone {
+      border: 2px dashed var(--card-border);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .dropzone:hover { border-color: var(--accent-color); }
+    .dropzone input { display: none; }
+
+    /* Enlarged Frame Grid */
+    .frame-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+      gap: 10px;
+      min-height: 120px;
+      max-height: 280px;
+      overflow-y: auto;
+      margin-top: 10px;
+      padding: 10px;
+      background: var(--input-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--card-border);
+    }
+
+    .frame-item {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: grab;
+      border: 2px solid transparent;
+      background: #000;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .frame-item:hover {
+      border-color: var(--card-border);
+    }
+    .frame-item.dragging { 
+      opacity: 0.35; 
+      border-color: var(--accent-color); 
+    }
+    .frame-item img { 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover; 
+      pointer-events: none;
+    }
+
+    /* Frame Badge */
+    .frame-index {
+      position: absolute; 
+      bottom: 4px; 
+      left: 4px;
+      background: rgba(0,0,0,0.75); 
+      color: #fff;
+      font-size: 11px; 
+      font-weight: 600;
+      padding: 2px 5px; 
+      border-radius: 4px;
+    }
+
+    /* Delete Frame Button */
+    .frame-delete-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 22px;
+      height: 22px;
+      background: rgba(224, 27, 36, 0.85);
+      color: #ffffff;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      line-height: 1;
+      font-weight: bold;
+      padding: 0;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .frame-delete-btn:hover {
+      background: var(--destructive);
+      transform: scale(1.1);
+    }
+
+    /* Controls */
+    .control-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .control-group label { font-size: 0.8rem; font-weight: 600; }
+    select, input[type="number"], input[type="range"] {
+      background: var(--input-bg);
+      color: var(--text-color);
+      border: 1px solid var(--card-border);
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      width: 100%;
+    }
+
+    /* Buttons */
+    button {
+      background: var(--card-bg);
+      color: var(--text-color);
+      border: 1px solid var(--card-border);
+      padding: 8px 16px;
+      border-radius: var(--radius);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      font-size: 0.85rem;
+    }
+    button:hover { background: var(--header-bg); }
+    button.primary { background: var(--accent-color); color: #fff; border-color: transparent; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.danger { color: var(--destructive); }
+    button.danger:hover { background: rgba(224, 27, 36, 0.1); border-color: var(--destructive); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Canvas Stage Area */
+    .preview-stage {
+      flex: 1;
+      min-height: 380px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      position: relative;
+    }
+    .preview-stage img, .preview-stage video {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header Bar -->
+  <header class="header-bar">
+    <h1>Image Sequencer</h1>
+    <button class="danger" id="resetBtn">Start Fresh</button>
+  </header>
+
+  <main class="app-workspace">
+    <!-- Left Configuration Pane -->
+    <section class="sidebar">
+      <div class="card">
+        <div class="section-title">1. Input Frames (Drag to Reorder)</div>
+        <div class="dropzone" id="dropzone">
+          <span>Drop images or click to browse</span>
+          <input type="file" id="fileInput" multiple accept="image/*" />
+        </div>
+        <div class="frame-list" id="frameList"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">2. Export Parameters</div>
+        
+        <div class="control-group">
+          <label for="format">Export Format</label>
+          <select id="format">
+            <option value="mp4" selected>MP4 (MPEG-4 / H.264)</option>
+            <option value="webm">WebM Video</option>
+            <option value="gif">Animated GIF</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="resolution">Target Standard Resolution</label>
+          <select id="resolution">
+            <option value="original">Original Aspect (Source)</option>
+            <option value="352x240">VCD (352 × 240)</option>
+            <option value="720x480">DVD (720 × 480)</option>
+            <option value="1280x720">720p HD (1280 × 720)</option>
+            <option value="1920x1080" selected>1080p Full HD (1920 × 1080)</option>
+            <option value="1920x1080">Blu-ray (1920 × 1080)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="fpsRange">Frame Rate / Speed</label>
+          <input type="range" id="fpsRange" min="1" max="30" value="10" />
+          <span style="font-size: 0.75rem; color: var(--text-muted);" id="fpsLabel">10 FPS (100ms)</span>
+        </div>
+
+        <div class="control-group">
+          <label for="quality">Quality / Sampling (1-10)</label>
+          <input type="number" id="quality" min="1" max="10" value="8" />
+        </div>
+
+        <button class="primary" id="renderBtn" style="width: 100%; margin-top: 6px;" disabled>Render Sequence</button>
+      </div>
+    </section>
+
+    <!-- Right Responsive Stage -->
+    <section class="main-stage">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="section-title" style="margin: 0;">3. Output Display</span>
+        <a id="downloadBtn" style="display:none;">
+          <button class="primary" id="downloadBtnText">Download MP4</button>
+        </a>
+      </div>
+
+      <div class="preview-stage" id="previewContainer">
+        <span style="color: var(--text-muted); font-size: 0.9rem;">No rendered output yet</span>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let images = [];
+    let draggedIndex = null;
+
+    const fileInput = document.getElementById('fileInput');
+    const dropzone = document.getElementById('dropzone');
+    const frameList = document.getElementById('frameList');
+    const renderBtn = document.getElementById('renderBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const previewContainer = document.getElementById('previewContainer');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const downloadBtnText = document.getElementById('downloadBtnText');
+    const fpsRange = document.getElementById('fpsRange');
+    const fpsLabel = document.getElementById('fpsLabel');
+
+    dropzone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => loadFiles([...e.target.files]);
+
+    dropzone.ondragover = (e) => e.preventDefault();
+    dropzone.ondrop = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.files) loadFiles([...e.dataTransfer.files]);
+    };
+
+    fpsRange.oninput = () => {
+      const fps = fpsRange.value;
+      fpsLabel.textContent = `${fps} FPS (${Math.round(1000 / fps)}ms)`;
+    };
+
+    function loadFiles(files) {
+      const imageFiles = files.filter(f => f.type.startsWith('image/'));
+      imageFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          images.push({ id: Math.random().toString(36), src: e.target.result });
+          renderThumbnails();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function removeFrame(index) {
+      images.splice(index, 1);
+      renderThumbnails();
+    }
+
+    function renderThumbnails() {
+      frameList.innerHTML = '';
+      images.forEach((imgObj, idx) => {
+        const item = document.createElement('div');
+        item.className = 'frame-item';
+        item.draggable = true;
+
+        item.innerHTML = `
+          <img src="${imgObj.src}">
+          <span class="frame-index">${idx + 1}</span>
+          <button class="frame-delete-btn" title="Remove Frame">&times;</button>
+        `;
+
+        // Delete button listener
+        item.querySelector('.frame-delete-btn').onclick = (e) => {
+          e.stopPropagation();
+          removeFrame(idx);
+        };
+
+        // Drag & Drop
+        item.ondragstart = () => {
+          draggedIndex = idx;
+          item.classList.add('dragging');
+        };
+
+        item.ondragover = (e) => e.preventDefault();
+
+        item.ondrop = (e) => {
+          e.preventDefault();
+          const targetIndex = idx;
+          const moved = images.splice(draggedIndex, 1)[0];
+          images.splice(targetIndex, 0, moved);
+          renderThumbnails();
+        };
+
+        item.ondragend = () => item.classList.remove('dragging');
+        frameList.appendChild(item);
+      });
+
+      renderBtn.disabled = images.length === 0;
+    }
+
+    resetBtn.onclick = () => {
+      images = [];
+      fileInput.value = '';
+      frameList.innerHTML = '';
+      previewContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 0.9rem;">No rendered output yet</span>';
+      downloadBtn.style.display = 'none';
+      renderBtn.disabled = true;
+      renderBtn.textContent = 'Render Sequence';
+    };
+
+    renderBtn.onclick = async () => {
+      if (images.length === 0) return;
+
+      renderBtn.disabled = true;
+      renderBtn.textContent = 'Rendering...';
+
+      const format = document.getElementById('format').value;
+      const resVal = document.getElementById('resolution').value;
+      const fps = parseInt(fpsRange.value);
+      const quality = parseInt(document.getElementById('quality').value);
+
+      let [targetWidth, targetHeight] = [null, null];
+      if (resVal !== 'original') {
+        [targetWidth, targetHeight] = resVal.split('x').map(Number);
+      }
+
+      if (format === 'mp4') {
+        await renderMP4(targetWidth, targetHeight, fps);
+      } else if (format === 'webm') {
+        renderWebM(targetWidth, targetHeight, fps);
+      } else {
+        renderGif(targetWidth, targetHeight, 1 / fps, quality);
+      }
+    };
+
+    async function renderMP4(width, height, fps) {
+      try {
+        const firstImg = await loadImage(images[0].src);
+        let w = width || firstImg.naturalWidth;
+        let h = height || firstImg.naturalHeight;
+
+        w = Math.floor(w / 2) * 2;
+        h = Math.floor(h / 2) * 2;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+
+        if (typeof VideoEncoder === "undefined") {
+          throw new Error("WebCodecs not supported");
+        }
+
+        const muxer = new Mp4Muxer.Muxer({
+          target: new Mp4Muxer.ArrayBufferTarget(),
+          video: {
+            codec: 'avc',
+            width: w,
+            height: h
+          },
+          fastStart: 'in-memory'
+        });
+
+        const videoEncoder = new VideoEncoder({
+          output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+          error: (e) => console.error(e)
+        });
+
+        videoEncoder.configure({
+          codec: 'avc1.42001f',
+          width: w,
+          height: h,
+          bitrate: 4_000_000
+        });
+
+        const frameDurationUs = (1 / fps) * 1_000_000;
+
+        for (let i = 0; i < images.length; i++) {
+          const img = await loadImage(images[i].src);
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const frame = new VideoFrame(canvas, { timestamp: i * frameDurationUs });
+          videoEncoder.encode(frame, { keyFrame: i % 10 === 0 });
+          frame.close();
+        }
+
+        await videoEncoder.flush();
+        muxer.finalize();
+
+        const { buffer } = muxer.target;
+        const blob = new Blob([buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+
+        displayOutput(url, 'video/mp4', 'mp4');
+      } catch (err) {
+        console.warn("Direct MP4 encode failed, falling back:", err);
+        renderWebM(width, height, fps, true);
+      }
+    }
+
+    async function renderWebM(width, height, fps, isMp4Fallback = false) {
+      const firstImg = await loadImage(images[0].src);
+      const w = width || firstImg.naturalWidth;
+      const h = height || firstImg.naturalHeight;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      const stream = canvas.captureStream(fps);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
+      });
+
+      const chunks = [];
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const ext = isMp4Fallback ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
+        const url = URL.createObjectURL(blob);
+        displayOutput(url, mediaRecorder.mimeType, ext);
+      };
+
+      mediaRecorder.start();
+
+      for (let imgObj of images) {
+        const img = await loadImage(imgObj.src);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        await new Promise(res => setTimeout(res, 1000 / fps));
+      }
+
+      mediaRecorder.stop();
+    }
+
+    function renderGif(width, height, interval, quality) {
+      gifshot.createGIF({
+        images: images.map(i => i.src),
+        gifWidth: width || 640,
+        gifHeight: height || 480,
+        interval: interval,
+        sampleInterval: 11 - quality
+      }, (obj) => {
+        if (!obj.error) {
+          displayOutput(obj.image, 'image/gif', 'gif');
+        }
+        renderBtn.disabled = false;
+        renderBtn.textContent = 'Render Sequence';
+      });
+    }
+
+    function displayOutput(url, mimeType, extension) {
+      if (extension === 'gif') {
+        previewContainer.innerHTML = `<img src="${url}" alt="Output" />`;
+      } else {
+        previewContainer.innerHTML = `<video src="${url}" controls autoplay loop></video>`;
+      }
+      downloadBtn.href = url;
+      downloadBtn.download = `sequence-${Date.now()}.${extension}`;
+      downloadBtnText.textContent = `Download ${extension.toUpperCase()}`;
+      downloadBtn.style.display = 'inline-block';
+      renderBtn.disabled = false;
+      renderBtn.textContent = 'Render Sequence';
+    }
+
+    function loadImage(src) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.src = src;
+      });
+    }
+  </script>
+</body>
+</html>

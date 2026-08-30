@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTK Research Studio</title>
+    <style>
+        /* --- GTK Adwaita Color Tokens & Theming --- */
+        :root {
+            --gtk-bg: #f6f8fa;
+            --gtk-base: #ffffff;
+            --gtk-fg: #24292f;
+            --gtk-fg-muted: #57606a;
+            --gtk-header: #ebeff3;
+            --gtk-border: #d0d7de;
+            --gtk-accent: #0969da;
+            --gtk-accent-hover: #0854b0;
+            --gtk-danger: #cf222e;
+            --gtk-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+            --gtk-connector: #0969da;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --gtk-bg: #1a1a1a;
+                --gtk-base: #242424;
+                --gtk-fg: #e0e0e0;
+                --gtk-fg-muted: #999999;
+                --gtk-header: #2e2e2e;
+                --gtk-border: #383838;
+                --gtk-accent: #3584e4;
+                --gtk-accent-hover: #1c71d8;
+                --gtk-danger: #e05561;
+                --gtk-card-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.4);
+                --gtk-connector: #3584e4;
+            }
+        }
+
+        [data-theme="dark"] {
+            --gtk-bg: #1a1a1a;
+            --gtk-base: #242424;
+            --gtk-fg: #e0e0e0;
+            --gtk-fg-muted: #999999;
+            --gtk-header: #2e2e2e;
+            --gtk-border: #383838;
+            --gtk-accent: #3584e4;
+            --gtk-accent-hover: #1c71d8;
+            --gtk-danger: #e05561;
+            --gtk-card-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.4);
+            --gtk-connector: #3584e4;
+        }
+
+        [data-theme="light"] {
+            --gtk-bg: #f6f8fa;
+            --gtk-base: #ffffff;
+            --gtk-fg: #24292f;
+            --gtk-fg-muted: #57606a;
+            --gtk-header: #ebeff3;
+            --gtk-border: #d0d7de;
+            --gtk-accent: #0969da;
+            --gtk-accent-hover: #0854b0;
+            --gtk-danger: #cf222e;
+            --gtk-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+            --gtk-connector: #0969da;
+        }
+
+        * { box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Cantarell, Ubuntu, sans-serif; background: var(--gtk-bg); color: var(--gtk-fg); user-select: none; }
+
+        /* --- Header & Tab Bar --- */
+        #top-bar { height: 44px; background: var(--gtk-header); border-bottom: 1px solid var(--gtk-border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; gap: 8px; z-index: 100; position: relative; }
+        .tab-bar { display: flex; align-items: center; gap: 4px; overflow-x: auto; max-width: 40%; height: 100%; scrollbar-width: none; }
+        .tab { background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; padding: 6px 12px; font-size: 0.85rem; font-weight: 500; cursor: pointer; color: var(--gtk-fg-muted); display: flex; align-items: center; gap: 6px; }
+        .tab.active { background: var(--gtk-base); color: var(--gtk-fg); border-color: var(--gtk-border); border-bottom-color: var(--gtk-base); }
+        .tab .tab-close { font-size: 10px; border-radius: 50%; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; opacity: 0.6; }
+        .tab .tab-close:hover { background: var(--gtk-danger); color: white; opacity: 1; }
+
+        .btn-group { display: flex; gap: 6px; align-items: center; }
+        button, label.button { background: var(--gtk-base); border: 1px solid var(--gtk-border); color: var(--gtk-fg); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease; }
+        button:hover, label.button:hover { border-color: var(--gtk-accent); color: var(--gtk-accent); }
+        button.primary { background: var(--gtk-accent); color: #fff; border-color: var(--gtk-accent); }
+        button.primary:hover { background: var(--gtk-accent-hover); }
+        button.danger { color: var(--gtk-danger); }
+        button.danger:hover { background: var(--gtk-danger); color: #fff; border-color: var(--gtk-danger); }
+
+        /* --- Canvas Layer --- */
+        #viewport { width: 100vw; height: calc(100vh - 44px); position: relative; overflow: hidden; background-image: radial-gradient(var(--gtk-border) 1px, transparent 1px); background-size: 24px 24px; cursor: grab; }
+        #viewport:active { cursor: grabbing; }
+        #canvas { position: absolute; top: 0; left: 0; width: 0; height: 0; transform-origin: 0 0; }
+        #svg-layer { position: absolute; top: 0; left: 0; width: 10000px; height: 10000px; pointer-events: none; z-index: 1; }
+
+        /* --- Card Styles --- */
+        .card {
+            position: absolute; width: 260px; min-width: 180px; min-height: 140px; height: 180px;
+            background: var(--gtk-base); border: 1px solid var(--gtk-border); border-radius: 10px;
+            box-shadow: var(--gtk-card-shadow); display: flex; flex-direction: column;
+            resize: both; overflow: hidden; z-index: 10; cursor: default;
+        }
+        .card.selected { border: 2px solid var(--gtk-accent); z-index: 20; }
+        .card-header {
+            height: 32px; min-height: 32px; background: var(--gtk-header); border-bottom: 1px solid var(--gtk-border);
+            display: flex; align-items: center; justify-content: space-between; padding: 0 8px; cursor: grab;
+        }
+        .card-title { font-size: 0.8rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; pointer-events: none; }
+        .card-actions { display: flex; align-items: center; gap: 4px; }
+        .card-btn { background: transparent; border: none; padding: 2px 4px; border-radius: 4px; cursor: pointer; color: var(--gtk-fg-muted); }
+        .card-btn:hover { background: var(--gtk-border); color: var(--gtk-fg); }
+        .card-btn.del:hover { background: var(--gtk-danger); color: white; }
+
+        .card-body { flex: 1; padding: 10px; overflow: hidden; position: relative; font-size: 0.85rem; line-height: 1.4; color: var(--gtk-fg); cursor: pointer; display: flex; flex-direction: column; }
+        .card-body.image-body { padding: 4px; align-items: center; justify-content: center; background: rgba(0,0,0,0.05); }
+        .card-body img { width: 100%; height: 100%; object-fit: contain; border-radius: 4px; }
+        .card-body pre { margin: 0; font-family: ui-monospace, monospace; font-size: 0.75rem; background: var(--gtk-bg); padding: 6px; border-radius: 4px; height: 100%; overflow: hidden; }
+
+        /* Card Link Port (Hierarchy drag) */
+        .card-port {
+            width: 14px; height: 14px; background: var(--gtk-accent); border-radius: 50%;
+            position: absolute; bottom: 6px; right: 6px; cursor: crosshair; z-index: 15;
+            border: 2px solid var(--gtk-base); box-shadow: 0 1px 4px rgba(0,0,0,0.3); transition: transform 0.15s;
+        }
+        .card-port:hover { transform: scale(1.3); }
+
+        /* --- Modals & Panels --- */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-card { width: 90%; max-width: 760px; max-height: 88vh; background: var(--gtk-base); border: 1px solid var(--gtk-border); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.4); display: flex; flex-direction: column; overflow: hidden; }
+        .modal-header { height: 48px; background: var(--gtk-header); border-bottom: 1px solid var(--gtk-border); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; gap: 8px; }
+        .modal-body { padding: 20px; overflow-y: auto; flex: 1; user-select: text; display: flex; flex-direction: column; }
+        .modal-body input, .modal-body textarea, .modal-body select {
+            width: 100%; background: var(--gtk-bg); border: 1px solid var(--gtk-border); color: var(--gtk-fg);
+            padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-family: inherit; font-size: 0.9rem;
+        }
+        .modal-body textarea { min-height: 220px; font-family: ui-monospace, monospace; resize: vertical; }
+
+        /* --- Context Menu --- */
+        #context-menu { display: none; position: fixed; z-index: 2000; background: var(--gtk-base); border: 1px solid var(--gtk-border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); padding: 4px; min-width: 170px; }
+        .menu-item { padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .menu-item:hover { background: var(--gtk-accent); color: white; }
+
+        /* --- Trash Drawer --- */
+        #trash-drawer { position: fixed; right: -320px; top: 44px; width: 300px; height: calc(100vh - 44px); background: var(--gtk-base); border-left: 1px solid var(--gtk-border); z-index: 200; transition: right 0.25s ease; padding: 14px; overflow-y: auto; box-shadow: -6px 0 16px rgba(0,0,0,0.2); }
+        #trash-drawer.open { right: 0; }
+        .trash-item { border: 1px solid var(--gtk-border); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: var(--gtk-bg); display: flex; justify-content: space-between; align-items: center; }
+    </style>
+</head>
+<body>
+
+    <div id="top-bar">
+        <div class="tab-bar" id="tab-bar"></div>
+
+        <div class="btn-group">
+            <button onclick="promptNewCanvas()">+ Project</button>
+            <button class="primary" onclick="openCreateModal()">+ Text</button>
+            <label class="button" title="Upload Image">
+                + Image <input type="file" id="file-uploader" accept="image/*" style="display:none;" onchange="handleFileImage(event)">
+            </label>
+            <button onclick="handleDirectClipboardPaste()">Paste Clip</button>
+            <button onclick="autoArrangeHierarchy()">Arrange Tree</button>
+            <button onclick="resetAllCardSizes()">Reset Sizes</button>
+            <button onclick="toggleTrashDrawer()">🗑️ Bin (<span id="trash-count">0</span>)</button>
+            <button onclick="openSettingsModal()">⚙️ Settings</button>
+            <button onclick="toggleTheme()" id="theme-btn">🌓</button>
+        </div>
+    </div>
+
+    <div id="viewport">
+        <svg id="svg-layer"></svg>
+        <div id="canvas"></div>
+    </div>
+
+    <div id="context-menu">
+        <div class="menu-item" onclick="openCreateModal()">+ New Snippet</div>
+        <div class="menu-item" onclick="document.getElementById('file-uploader').click()">+ Upload Image</div>
+        <div class="menu-item" onclick="handleDirectClipboardPaste()">📋 Paste Clipboard</div>
+        <div class="menu-item" onclick="autoArrangeHierarchy()">🌿 Arrange Tree</div>
+        <div class="menu-item" onclick="resetAllCardSizes()">🔄 Reset Sizes</div>
+    </div>
+
+    <div id="trash-drawer">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <strong style="font-size:0.9rem;">Trash Bin</strong>
+            <button class="danger" onclick="emptyTrash()" style="font-size:0.75rem; padding:2px 6px;">Empty</button>
+        </div>
+        <div id="trash-list"></div>
+    </div>
+
+    <div class="modal-overlay" id="card-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <strong id="modal-title-text">New Snippet</strong>
+                <button onclick="closeModal('card-modal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="modal-card-title" placeholder="Title / Caption (e.g. Python Async Loop)">
+                <select id="modal-card-type">
+                    <option value="snippet">Text / Markdown</option>
+                    <option value="code">Code Block</option>
+                    <option value="link">Hyperlink</option>
+                </select>
+                <textarea id="modal-card-content" placeholder="Paste your body text, URLs, or scripts here..."></textarea>
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button onclick="closeModal('card-modal')">Cancel</button>
+                    <button class="primary" onclick="saveCardFromModal()">Save Card</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="focus-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <strong id="focus-title">Preview</strong>
+                <div class="btn-group">
+                    <button id="focus-edit-btn" onclick="toggleModalEditor()">✏️ Edit</button>
+                    <button onclick="closeModal('focus-modal')">✕</button>
+                </div>
+            </div>
+            <div class="modal-body" id="focus-content"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal-card" style="max-width: 480px;">
+            <div class="modal-header">
+                <strong>Dashboard Settings</strong>
+                <button onclick="closeModal('settings-modal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <label style="font-size:0.85rem; font-weight:600;">Theme Mode</label>
+                <select id="setting-theme" onchange="changeThemePreference(this.value)">
+                    <option value="auto">System Automatic (OS)</option>
+                    <option value="light">Adwaita Light</option>
+                    <option value="dark">Adwaita Dark</option>
+                </select>
+
+                <label style="font-size:0.85rem; font-weight:600;">Card Auto-Purge Expiration</label>
+                <select id="setting-purge" onchange="updatePurgeSetting(this.value)">
+                    <option value="0">Never (Keep indefinitely)</option>
+                    <option value="1">1 Day</option>
+                    <option value="3">3 Days</option>
+                    <option value="7">7 Days</option>
+                </select>
+
+                <label style="font-size:0.85rem; font-weight:600;">Hierarchy Links</label>
+                <div style="margin-bottom:12px;">
+                    <button onclick="unparentAll()">Unlink All Parent/Child Lines</button>
+                </div>
+
+                <label style="font-size:0.85rem; font-weight:600;">Backup / Portability</label>
+                <div style="display:flex; gap:8px;">
+                    <button onclick="exportDataJSON()">Export JSON</button>
+                    <label class="button">Import JSON <input type="file" accept=".json" style="display:none" onchange="importDataJSON(event)"></label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    /* --- State Management --- */
+    const STORAGE_KEY = 'gtk_research_studio_v3';
+    const DEFAULT_WIDTH = 260;
+    const DEFAULT_HEIGHT = 180;
+    
+    let appState = {
+        activeTab: 'main',
+        themePreference: 'auto',
+        purgeDays: 0,
+        canvases: {
+            'main': {
+                name: 'Research Canvas 1',
+                panX: 40,
+                panY: 40,
+                cards: [],
+                trash: []
+            }
+        }
+    };
+
+    let linkingParentId = null;
+    let linkingTempLine = null;
+    let activeFocusedCardId = null;
+    let isEditingInModal = false;
+
+    /* --- Initialization --- */
+    function init() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            try { appState = JSON.parse(saved); } catch (e) { console.error(e); }
+        }
+
+        applyTheme(appState.themePreference || 'auto');
+        applyPurgePolicy();
+        renderTabs();
+        renderCanvas();
+        setupGlobalEvents();
+    }
+
+    function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+    }
+
+    function getActiveCanvas() {
+        if (!appState.canvases[appState.activeTab]) {
+            appState.activeTab = Object.keys(appState.canvases)[0] || 'main';
+        }
+        return appState.canvases[appState.activeTab];
+    }
+
+    /* --- Theme Management --- */
+    function applyTheme(pref) {
+        appState.themePreference = pref;
+        if (pref === 'auto') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', pref);
+        }
+        const select = document.getElementById('setting-theme');
+        if (select) select.value = pref;
+    }
+
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        if (!current) {
+            applyTheme('dark');
+        } else if (current === 'dark') {
+            applyTheme('light');
+        } else {
+            applyTheme('auto');
+        }
+        saveState();
+    }
+
+    function changeThemePreference(val) {
+        applyTheme(val);
+        saveState();
+    }
+
+    function updatePurgeSetting(val) {
+        appState.purgeDays = parseInt(val, 10);
+        applyPurgePolicy();
+        saveState();
+    }
+
+    /* --- Tab / Multi-Project System --- */
+    function renderTabs() {
+        const tabBar = document.getElementById('tab-bar');
+        tabBar.innerHTML = '';
+        Object.keys(appState.canvases).forEach(tabId => {
+            const canvas = appState.canvases[tabId];
+            const tabEl = document.createElement('div');
+            tabEl.className = `tab ${tabId === appState.activeTab ? 'active' : ''}`;
+            tabEl.innerHTML = `
+                <span>${escapeHtml(canvas.name)}</span>
+                ${Object.keys(appState.canvases).length > 1 ? `<span class="tab-close" onclick="deleteCanvas(event, '${tabId}')">✕</span>` : ''}
+            `;
+            tabEl.onclick = (e) => {
+                if (e.target.classList.contains('tab-close')) return;
+                appState.activeTab = tabId;
+                renderTabs();
+                renderCanvas();
+                saveState();
+            };
+            tabBar.appendChild(tabEl);
+        });
+        document.getElementById('trash-count').innerText = (getActiveCanvas().trash || []).length;
+    }
+
+    function promptNewCanvas() {
+        const name = prompt('Enter project canvas name:', 'New Project');
+        if (!name) return;
+        const id = 'canvas_' + Date.now();
+        appState.canvases[id] = { name, panX: 40, panY: 40, cards: [], trash: [] };
+        appState.activeTab = id;
+        renderTabs();
+        renderCanvas();
+        saveState();
+    }
+
+    function deleteCanvas(e, tabId) {
+        e.stopPropagation();
+        if (confirm(`Delete project "${appState.canvases[tabId].name}"?`)) {
+            delete appState.canvases[tabId];
+            appState.activeTab = Object.keys(appState.canvases)[0];
+            renderTabs();
+            renderCanvas();
+            saveState();
+        }
+    }
+
+    /* --- Canvas Core Rendering --- */
+    const viewport = document.getElementById('viewport');
+    const canvasContainer = document.getElementById('canvas');
+    const svgLayer = document.getElementById('svg-layer');
+
+    function renderCanvas() {
+        const current = getActiveCanvas();
+        canvasContainer.innerHTML = '';
+        canvasContainer.style.transform = `translate(${current.panX}px, ${current.panY}px)`;
+
+        renderConnectors();
+
+        current.cards.forEach(card => {
+            const cardEl = document.createElement('div');
+            cardEl.className = 'card';
+            cardEl.id = card.id;
+            cardEl.style.left = `${card.x}px`;
+            cardEl.style.top = `${card.y}px`;
+            cardEl.style.width = `${card.width || DEFAULT_WIDTH}px`;
+            cardEl.style.height = `${card.height || DEFAULT_HEIGHT}px`;
+
+            let bodyHtml = '';
+            if (card.type === 'image') {
+                bodyHtml = `<div class="card-body image-body"><img src="${card.content}" alt="infographic"></div>`;
+            } else if (card.type === 'code') {
+                bodyHtml = `<div class="card-body"><pre>${escapeHtml(card.content)}</pre></div>`;
+            } else if (card.type === 'link') {
+                bodyHtml = `<div class="card-body"><a href="${card.content}" target="_blank" onclick="event.stopPropagation()" style="color:var(--gtk-accent); font-weight:600;">🔗 ${escapeHtml(card.title || card.content)}</a><p style="font-size:0.75rem; color:var(--gtk-fg-muted); margin-top:6px;">${escapeHtml(card.content)}</p></div>`;
+            } else {
+                bodyHtml = `<div class="card-body">${escapeHtml(card.content)}</div>`;
+            }
+
+            cardEl.innerHTML = `
+                <div class="card-header">
+                    <span class="card-title">${escapeHtml(card.title || 'Untitled')}</span>
+                    <div class="card-actions">
+                        <button class="card-btn" title="Expand View" onclick="openFocusModal('${card.id}')">🗖</button>
+                        <button class="card-btn del" title="Delete" onclick="deleteCard('${card.id}')">✕</button>
+                    </div>
+                </div>
+                ${bodyHtml}
+                <div class="card-port" title="Drag to connect child node" onmousedown="startLinking(event, '${card.id}')"></div>
+            `;
+
+            setupCardDrag(cardEl, card);
+            setupCardResize(cardEl, card);
+            
+            // Single-click to open
+            cardEl.querySelector('.card-body').onclick = () => openFocusModal(card.id);
+
+            canvasContainer.appendChild(cardEl);
+        });
+
+        document.getElementById('trash-count').innerText = (current.trash || []).length;
+    }
+
+    /* --- Fluid Dragging (Header Only) --- */
+    function setupCardDrag(el, cardData) {
+        const header = el.querySelector('.card-header');
+        header.onmousedown = (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            e.stopPropagation();
+
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const initialX = cardData.x;
+            const initialY = cardData.y;
+
+            el.classList.add('selected');
+
+            function onMouseMove(moveEvent) {
+                cardData.x = initialX + (moveEvent.clientX - startX);
+                cardData.y = initialY + (moveEvent.clientY - startY);
+                el.style.left = `${cardData.x}px`;
+                el.style.top = `${cardData.y}px`;
+                renderConnectors();
+            }
+
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                el.classList.remove('selected');
+                saveState();
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        };
+    }
+
+    /* --- Free Resizing Tracker --- */
+    function setupCardResize(el, cardData) {
+        let isInitial = true;
+        const observer = new ResizeObserver(entries => {
+            if (isInitial) { isInitial = false; return; }
+            for (let entry of entries) {
+                const w = Math.round(entry.contentRect.width);
+                const h = Math.round(entry.contentRect.height);
+                if (w > 0 && h > 0) {
+                    cardData.width = w;
+                    cardData.height = h;
+                    renderConnectors();
+                }
+            }
+        });
+        observer.observe(el);
+    }
+
+    function resetAllCardSizes() {
+        const current = getActiveCanvas();
+        current.cards.forEach(card => {
+            card.width = DEFAULT_WIDTH;
+            card.height = DEFAULT_HEIGHT;
+        });
+        renderCanvas();
+        saveState();
+    }
+
+    /* --- Canvas Panning --- */
+    let isPanning = false;
+    let panStartX, panStartY;
+
+    viewport.onmousedown = (e) => {
+        if (e.target !== viewport && e.target !== svgLayer) return;
+        isPanning = true;
+        const current = getActiveCanvas();
+        panStartX = e.clientX - current.panX;
+        panStartY = e.clientY - current.panY;
+    };
+
+    window.onmousemove = (e) => {
+        if (isPanning) {
+            const current = getActiveCanvas();
+            current.panX = e.clientX - panStartX;
+            current.panY = e.clientY - panStartY;
+            canvasContainer.style.transform = `translate(${current.panX}px, ${current.panY}px)`;
+            renderConnectors();
+        }
+        if (linkingParentId && linkingTempLine) {
+            updateTempLink(e.clientX, e.clientY);
+        }
+    };
+
+    window.onmouseup = (e) => {
+        if (isPanning) {
+            isPanning = false;
+            saveState();
+        }
+        if (linkingParentId) {
+            endLinking(e);
+        }
+    };
+
+    /* --- Parent/Child Hierarchy with Loop Prevention --- */
+    function isDescendant(potentialChildId, potentialParentId) {
+        const current = getActiveCanvas();
+        let curr = current.cards.find(c => c.id === potentialParentId);
+        while (curr && curr.parentId) {
+            if (curr.parentId === potentialChildId) return true;
+            curr = current.cards.find(c => c.id === curr.parentId);
+        }
+        return false;
+    }
+
+    function startLinking(e, parentId) {
+        e.stopPropagation();
+        linkingParentId = parentId;
+        linkingTempLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        linkingTempLine.setAttribute('stroke', 'var(--gtk-accent)');
+        linkingTempLine.setAttribute('stroke-width', '2');
+        linkingTempLine.setAttribute('stroke-dasharray', '4');
+        linkingTempLine.setAttribute('fill', 'none');
+        svgLayer.appendChild(linkingTempLine);
+    }
+
+    function updateTempLink(mouseX, mouseY) {
+        const current = getActiveCanvas();
+        const parent = current.cards.find(c => c.id === linkingParentId);
+        if (!parent) return;
+
+        const x1 = parent.x + (parent.width || DEFAULT_WIDTH) + current.panX;
+        const y1 = parent.y + ((parent.height || DEFAULT_HEIGHT) / 2) + current.panY;
+        const d = `M ${x1} ${y1} C ${(x1+mouseX)/2} ${y1}, ${(x1+mouseX)/2} ${mouseY}, ${mouseX} ${mouseY}`;
+        linkingTempLine.setAttribute('d', d);
+    }
+
+    function endLinking(e) {
+        const current = getActiveCanvas();
+        const targetCardEl = e.target.closest('.card');
+        if (targetCardEl && targetCardEl.id !== linkingParentId) {
+            const targetId = targetCardEl.id;
+            
+            // Prevention check: cannot link if target is already an ancestor of parent
+            if (isDescendant(targetId, linkingParentId)) {
+                alert("Cannot create a circular hierarchy. A parent cannot be a child of its own descendant.");
+            } else {
+                const childCard = current.cards.find(c => c.id === targetId);
+                if (childCard) {
+                    childCard.parentId = linkingParentId;
+                }
+            }
+        }
+        if (linkingTempLine) linkingTempLine.remove();
+        linkingParentId = null;
+        linkingTempLine = null;
+        renderConnectors();
+        saveState();
+    }
+
+    function renderConnectors() {
+        const current = getActiveCanvas();
+        svgLayer.innerHTML = '';
+        current.cards.forEach(card => {
+            if (card.parentId) {
+                const parent = current.cards.find(c => c.id === card.parentId);
+                if (parent) {
+                    const x1 = parent.x + (parent.width || DEFAULT_WIDTH) + current.panX;
+                    const y1 = parent.y + ((parent.height || DEFAULT_HEIGHT) / 2) + current.panY;
+                    const x2 = card.x + current.panX;
+                    const y2 = card.y + ((card.height || DEFAULT_HEIGHT) / 2) + current.panY;
+
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    const curvature = Math.max(Math.abs(x2 - x1) / 2, 40);
+                    path.setAttribute('d', `M ${x1} ${y1} C ${x1 + curvature} ${y1}, ${x2 - curvature} ${y2}, ${x2} ${y2}`);
+                    path.setAttribute('stroke', 'var(--gtk-connector)');
+                    path.setAttribute('stroke-width', '2.5');
+                    path.setAttribute('fill', 'none');
+                    svgLayer.appendChild(path);
+                }
+            }
+        });
+    }
+
+    function unparentAll() {
+        const current = getActiveCanvas();
+        current.cards.forEach(c => delete c.parentId);
+        renderConnectors();
+        saveState();
+        closeModal('settings-modal');
+    }
+
+    /* --- Auto-Arrange Hierarchy Tree (Safe Size Retaining) --- */
+    function autoArrangeHierarchy() {
+        const current = getActiveCanvas();
+        const roots = current.cards.filter(c => !c.parentId);
+        let startY = 80;
+
+        function arrangeNode(node, depth, yOffset) {
+            node.x = depth * 320 + 80;
+            node.y = yOffset;
+            const children = current.cards.filter(c => c.parentId === node.id);
+            let childY = yOffset;
+            children.forEach(child => {
+                childY = arrangeNode(child, depth + 1, childY);
+            });
+            return Math.max(yOffset + (node.height || DEFAULT_HEIGHT) + 40, childY);
+        }
+
+        roots.forEach(root => {
+            startY = arrangeNode(root, 0, startY);
+        });
+
+        renderCanvas();
+        saveState();
+    }
+
+    /* --- Direct Clipboard & Paste Detection --- */
+    function setupGlobalEvents() {
+        window.addEventListener('paste', async (e) => {
+            // Ignore paste if typing inside textareas or inputs
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        createCard({
+                            type: 'image',
+                            title: 'Pasted Image',
+                            content: event.target.result
+                        });
+                    };
+                    reader.readAsDataURL(blob);
+                    return;
+                }
+            }
+
+            const text = e.clipboardData.getData('text');
+            if (text) {
+                if (isValidUrl(text)) {
+                    createCard({ type: 'link', title: new URL(text).hostname, content: text });
+                } else if (text.split('\n').length > 4 || text.includes('const ') || text.includes('def ')) {
+                    createCard({ type: 'code', title: 'Code Snippet', content: text });
+                } else {
+                    createCard({ type: 'snippet', title: text.substring(0, 24) + '...', content: text });
+                }
+            }
+        });
+
+        // Context Menu
+        viewport.oncontextmenu = (e) => {
+            e.preventDefault();
+            const cm = document.getElementById('context-menu');
+            cm.style.display = 'block';
+            cm.style.left = `${e.clientX}px`;
+            cm.style.top = `${e.clientY}px`;
+        };
+
+        window.onclick = () => {
+            document.getElementById('context-menu').style.display = 'none';
+        };
+
+        window.onkeydown = (e) => {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const selected = document.querySelector('.card.selected');
+                if (selected && !document.querySelector('.modal-overlay[style*="display: flex"]')) {
+                    deleteCard(selected.id);
+                }
+            }
+            if (e.key === 'Escape') {
+                closeModal('card-modal');
+                closeModal('focus-modal');
+                closeModal('settings-modal');
+            }
+        };
+    }
+
+    async function handleDirectClipboardPaste() {
+        try {
+            const clipItems = await navigator.clipboard.read();
+            for (let item of clipItems) {
+                for (let type of item.types) {
+                    if (type.startsWith('image/')) {
+                        const blob = await item.getType(type);
+                        const reader = new FileReader();
+                        reader.onload = (e) => createCard({ type: 'image', title: 'Clipboard Image', content: e.target.result });
+                        reader.readAsDataURL(blob);
+                        return;
+                    }
+                }
+            }
+            const text = await navigator.clipboard.readText();
+            if (text) {
+                if (isValidUrl(text)) createCard({ type: 'link', title: new URL(text).hostname, content: text });
+                else createCard({ type: 'snippet', title: text.substring(0, 24) + '...', content: text });
+            }
+        } catch (err) {
+            alert('Direct clipboard access blocked by browser permissions. Please use Ctrl+V / Cmd+V directly.');
+        }
+    }
+
+    function handleFileImage(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            createCard({ type: 'image', title: file.name, content: event.target.result });
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function createCard({ type, title, content }) {
+        const current = getActiveCanvas();
+        const card = {
+            id: 'card_' + Date.now(),
+            type,
+            title,
+            content,
+            x: -current.panX + 100 + Math.random() * 40,
+            y: -current.panY + 80 + Math.random() * 40,
+            width: DEFAULT_WIDTH,
+            height: DEFAULT_HEIGHT,
+            createdAt: Date.now()
+        };
+        current.cards.push(card);
+        renderCanvas();
+        saveState();
+    }
+
+    /* --- Delete & Trash System --- */
+    function deleteCard(cardId) {
+        const current = getActiveCanvas();
+        const idx = current.cards.findIndex(c => c.id === cardId);
+        if (idx !== -1) {
+            if (!current.trash) current.trash = [];
+            current.trash.push(current.cards[idx]);
+            current.cards.splice(idx, 1);
+            current.cards.filter(c => c.parentId === cardId).forEach(c => delete c.parentId);
+            renderCanvas();
+            renderTrashDrawer();
+            saveState();
+        }
+    }
+
+    function toggleTrashDrawer() {
+        const drawer = document.getElementById('trash-drawer');
+        drawer.classList.toggle('open');
+        renderTrashDrawer();
+    }
+
+    function renderTrashDrawer() {
+        const current = getActiveCanvas();
+        const list = document.getElementById('trash-list');
+        list.innerHTML = '';
+        (current.trash || []).forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'trash-item';
+            div.innerHTML = `
+                <div style="overflow:hidden; font-size:0.8rem;">
+                    <strong>${escapeHtml(item.title || 'Untitled')}</strong>
+                    <div style="color:var(--gtk-fg-muted); font-size:0.7rem;">${item.type}</div>
+                </div>
+                <button onclick="restoreTrash(${index})" style="font-size:0.7rem;">Restore</button>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    function restoreTrash(index) {
+        const current = getActiveCanvas();
+        const item = current.trash.splice(index, 1)[0];
+        current.cards.push(item);
+        renderCanvas();
+        renderTrashDrawer();
+        saveState();
+    }
+
+    function emptyTrash() {
+        const current = getActiveCanvas();
+        current.trash = [];
+        renderTrashDrawer();
+        saveState();
+    }
+
+    /* --- Aging / Auto-Purge --- */
+    function applyPurgePolicy() {
+        const days = appState.purgeDays || 0;
+        if (days === 0) return;
+        const maxAge = days * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        Object.values(appState.canvases).forEach(canvas => {
+            canvas.cards = canvas.cards.filter(c => (now - (c.createdAt || now)) < maxAge);
+        });
+    }
+
+    /* --- Modals & In-Place Editing --- */
+    function openCreateModal() {
+        document.getElementById('card-modal').style.display = 'flex';
+        document.getElementById('modal-card-title').value = '';
+        document.getElementById('modal-card-content').value = '';
+    }
+
+    function saveCardFromModal() {
+        const title = document.getElementById('modal-card-title').value;
+        const type = document.getElementById('modal-card-type').value;
+        const content = document.getElementById('modal-card-content').value;
+        if (!content) return;
+        createCard({ title, type, content });
+        closeModal('card-modal');
+    }
+
+    function openFocusModal(cardId) {
+        activeFocusedCardId = cardId;
+        isEditingInModal = false;
+        renderFocusModalContent();
+        document.getElementById('focus-modal').style.display = 'flex';
+    }
+
+    function renderFocusModalContent() {
+        const current = getActiveCanvas();
+        const card = current.cards.find(c => c.id === activeFocusedCardId);
+        if (!card) return;
+
+        document.getElementById('focus-title').innerText = card.title || 'Preview';
+        const body = document.getElementById('focus-content');
+        const editBtn = document.getElementById('focus-edit-btn');
+        editBtn.style.display = (card.type === 'image') ? 'none' : 'inline-flex';
+        editBtn.innerText = isEditingInModal ? '💾 Save' : '✏️ Edit';
+
+        if (isEditingInModal) {
+            body.innerHTML = `
+                <input type="text" id="edit-modal-title" value="${escapeHtml(card.title || '')}" placeholder="Title">
+                <textarea id="edit-modal-content" style="flex:1;">${escapeHtml(card.content || '')}</textarea>
+            `;
+        } else {
+            if (card.type === 'image') {
+                body.innerHTML = `<div style="display:flex; justify-content:center; align-items:center; height:100%;"><img src="${card.content}" style="max-width:100%; max-height:70vh; object-fit:contain; border-radius:6px;"></div>`;
+            } else if (card.type === 'code') {
+                body.innerHTML = `<pre style="padding:16px; background:var(--gtk-bg); border-radius:6px; overflow-x:auto; margin:0; flex:1;">${escapeHtml(card.content)}</pre>`;
+            } else if (card.type === 'link') {
+                body.innerHTML = `
+                    <div style="margin-bottom:12px;"><a href="${card.content}" target="_blank" style="color:var(--gtk-accent); font-size:1.1rem; font-weight:600;">🔗 Open Link: ${escapeHtml(card.content)}</a></div>
+                    <p style="white-space:pre-wrap; line-height:1.6;">${escapeHtml(card.content)}</p>
+                `;
+            } else {
+                body.innerHTML = `<p style="white-space:pre-wrap; line-height:1.6; margin:0; flex:1;">${escapeHtml(card.content)}</p>`;
+            }
+        }
+    }
+
+    function toggleModalEditor() {
+        const current = getActiveCanvas();
+        const card = current.cards.find(c => c.id === activeFocusedCardId);
+        if (!card) return;
+
+        if (isEditingInModal) {
+            card.title = document.getElementById('edit-modal-title').value;
+            card.content = document.getElementById('edit-modal-content').value;
+            isEditingInModal = false;
+            renderFocusModalContent();
+            renderCanvas();
+            saveState();
+        } else {
+            isEditingInModal = true;
+            renderFocusModalContent();
+        }
+    }
+
+    function openSettingsModal() {
+        document.getElementById('setting-purge').value = appState.purgeDays || 0;
+        document.getElementById('settings-modal').style.display = 'flex';
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
+        if (id === 'focus-modal') {
+            activeFocusedCardId = null;
+            isEditingInModal = false;
+        }
+    }
+
+    /* --- Import / Export --- */
+    function exportDataJSON() {
+        const blob = new Blob([JSON.stringify(appState, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `research_workspace_${Date.now()}.json`;
+        a.click();
+    }
+
+    function importDataJSON(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                appState = JSON.parse(event.target.result);
+                applyTheme(appState.themePreference || 'auto');
+                renderTabs();
+                renderCanvas();
+                saveState();
+                closeModal('settings-modal');
+            } catch (err) { alert('Invalid JSON workspace file.'); }
+        };
+        reader.readAsText(file);
+    }
+
+    /* --- Utilities --- */
+    function isValidUrl(s) {
+        try { new URL(s); return true; } catch (_) { return false; }
+    }
+    function escapeHtml(t) {
+        const d = document.createElement('div');
+        d.innerText = t || '';
+        return d.innerHTML;
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>

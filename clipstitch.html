@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipStitch - AI Sequence Previewer</title>
+  <style>
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --radius: 8px;
+      --transition: 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    /* GTK Light Theme */
+    :root[data-theme="light"] {
+      --bg: #fafafa;
+      --header-bg: #ebebeb;
+      --card-bg: #ffffff;
+      --border: #dcdcdc;
+      --text: #2e3436;
+      --text-muted: #777d84;
+      --accent: #3584e4;
+      --accent-hover: #1c71d8;
+      --accent-text: #ffffff;
+      --active-clip: rgba(53, 132, 228, 0.12);
+      --card-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      --btn-bg: #f6f6f6;
+      --btn-hover: #e8e8e8;
+      --btn-border: #cfcfcf;
+    }
+
+    /* GTK Dark Theme */
+    :root[data-theme="dark"] {
+      --bg: #242424;
+      --header-bg: #303030;
+      --card-bg: #2d2d2d;
+      --border: #424242;
+      --text: #eeeeec;
+      --text-muted: #9a9996;
+      --accent: #3584e4;
+      --accent-hover: #62a0ea;
+      --accent-text: #ffffff;
+      --active-clip: rgba(53, 132, 228, 0.22);
+      --card-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      --btn-bg: #383838;
+      --btn-hover: #454545;
+      --btn-border: #4d4d4d;
+    }
+
+    /* System Auto Preference */
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --bg: #242424;
+        --header-bg: #303030;
+        --card-bg: #2d2d2d;
+        --border: #424242;
+        --text: #eeeeec;
+        --text-muted: #9a9996;
+        --accent: #3584e4;
+        --accent-hover: #62a0ea;
+        --accent-text: #ffffff;
+        --active-clip: rgba(53, 132, 228, 0.22);
+        --card-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        --btn-bg: #383838;
+        --btn-hover: #454545;
+        --btn-border: #4d4d4d;
+      }
+    }
+    @media (prefers-color-scheme: light) {
+      :root[data-theme="auto"] {
+        --bg: #fafafa;
+        --header-bg: #ebebeb;
+        --card-bg: #ffffff;
+        --border: #dcdcdc;
+        --text: #2e3436;
+        --text-muted: #777d84;
+        --accent: #3584e4;
+        --accent-hover: #1c71d8;
+        --accent-text: #ffffff;
+        --active-clip: rgba(53, 132, 228, 0.12);
+        --card-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        --btn-bg: #f6f6f6;
+        --btn-hover: #e8e8e8;
+        --btn-border: #cfcfcf;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
+    body { background-color: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* Top Header Bar */
+    header {
+      background-color: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .brand { font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .header-controls { display: flex; align-items: center; gap: 10px; }
+
+    /* GTK Buttons & Controls */
+    button, select, label.file-upload-btn {
+      background-color: var(--btn-bg);
+      color: var(--text);
+      border: 1px solid var(--btn-border);
+      border-radius: var(--radius);
+      padding: 6px 14px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--transition), border-color var(--transition);
+      user-select: none;
+    }
+    button:hover, select:hover, label.file-upload-btn:hover {
+      background-color: var(--btn-hover);
+    }
+    button.primary {
+      background-color: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+    button.primary:hover { background-color: var(--accent-hover); }
+
+    /* Toggle Switch */
+    .toggle-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+    .toggle-group input { display: none; }
+    .toggle-slider {
+      width: 38px;
+      height: 20px;
+      background-color: var(--btn-border);
+      border-radius: 20px;
+      position: relative;
+      transition: background var(--transition);
+    }
+    .toggle-slider::after {
+      content: "";
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: white;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: transform var(--transition);
+    }
+    .toggle-group input:checked + .toggle-slider { background-color: var(--accent); }
+    .toggle-group input:checked + .toggle-slider::after { transform: translateX(18px); }
+
+    /* Dynamic Grid Layout */
+    .container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+      gap: 20px;
+      padding: 20px;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 900px) {
+      .container { grid-template-columns: 1fr; }
+    }
+
+    /* Player Viewport */
+    .player-panel { display: flex; flex-direction: column; gap: 12px; }
+    .video-viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--card-shadow);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .playback-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background-color: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+    }
+    .indicator {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Timeline & Sequence Playlist */
+    .sequence-panel {
+      display: flex;
+      flex-direction: column;
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--card-shadow);
+      max-height: calc(100vh - 120px);
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: var(--header-bg);
+    }
+    .clip-list {
+      list-style: none;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+    .clip-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background-color: var(--btn-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: grab;
+      user-select: none;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .clip-item:active { cursor: grabbing; }
+    .clip-item.active {
+      background-color: var(--active-clip);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .clip-item.dragging { opacity: 0.4; border-style: dashed; }
+    .clip-index {
+      font-size: 0.8rem;
+      background: var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      color: var(--text-muted);
+    }
+    .clip-name {
+      flex: 1;
+      font-size: 0.88rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .clip-actions { display: flex; gap: 4px; }
+    .clip-actions button {
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      background: transparent;
+      border-color: transparent;
+    }
+    .clip-actions button:hover { background-color: var(--btn-hover); border-color: var(--btn-border); }
+
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span>🎬</span> ClipStitch Sequencer
+    </div>
+    <div class="header-controls">
+      <label class="toggle-group" title="Toggle continuous loop preview">
+        <input type="checkbox" id="loopToggle" checked />
+        <div class="toggle-slider"></div>
+        <span>Loop Playback</span>
+      </label>
+
+      <select id="themeSelect" aria-label="Select GTK Theme">
+        <option value="auto">Theme: Auto</option>
+        <option value="light">Theme: Light</option>
+        <option value="dark">Theme: Dark</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="player-panel">
+      <div class="video-viewport">
+        <video id="mainVideo" playsinline></video>
+      </div>
+      <div class="playback-bar">
+        <div style="display: flex; gap: 8px;">
+          <button id="prevBtn" title="Previous Clip">⏮</button>
+          <button id="playBtn" class="primary" title="Play/Pause">▶ Play</button>
+          <button id="nextBtn" title="Next Clip">⏭</button>
+          <button id="restartBtn" title="Play from First Clip">↺ Start</button>
+        </div>
+        <div class="indicator" id="statusIndicator">No clips loaded</div>
+      </div>
+    </div>
+
+    <div class="sequence-panel">
+      <div class="panel-header">
+        <strong>Clip Sequence</strong>
+        <div style="display: flex; gap: 6px;">
+          <input type="file" id="fileInput" accept="video/mp4,video/webm" multiple style="display: none;" />
+          <label for="fileInput" class="file-upload-btn primary">+ Add Clips</label>
+          <button id="clearBtn" title="Clear all clips">Clear</button>
+        </div>
+      </div>
+      <ul class="clip-list" id="clipList">
+        <li class="empty-state">No clips added yet. Upload your AI clips to sequence them.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    let playlist = []; // Array of { id, name, url }
+    let currentIndex = 0;
+
+    const video = document.getElementById("mainVideo");
+    const playBtn = document.getElementById("playBtn");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const restartBtn = document.getElementById("restartBtn");
+    const loopToggle = document.getElementById("loopToggle");
+    const fileInput = document.getElementById("fileInput");
+    const clipList = document.getElementById("clipList");
+    const statusIndicator = document.getElementById("statusIndicator");
+    const themeSelect = document.getElementById("themeSelect");
+
+    // Theme Switcher
+    themeSelect.addEventListener("change", (e) => {
+      document.documentElement.setAttribute("data-theme", e.target.value);
+    });
+
+    // File Selection
+    fileInput.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+
+      const wasEmpty = playlist.length === 0;
+      files.forEach((file) => {
+        playlist.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          url: URL.createObjectURL(file)
+        });
+      });
+
+      renderPlaylist();
+      if (wasEmpty && playlist.length > 0) {
+        loadClip(0, true);
+      }
+      fileInput.value = "";
+    });
+
+    // Render Timeline List
+    function renderPlaylist() {
+      clipList.innerHTML = "";
+      if (playlist.length === 0) {
+        clipList.innerHTML = `<li class="empty-state">No clips added yet. Upload your AI clips to sequence them.</li>`;
+        updateStatus();
+        return;
+      }
+
+      playlist.forEach((clip, index) => {
+        const li = document.createElement("li");
+        li.className = `clip-item ${index === currentIndex ? "active" : ""}`;
+        li.draggable = true;
+        li.dataset.index = index;
+
+        li.innerHTML = `
+          <span class="clip-index">#${index + 1}</span>
+          <span class="clip-name" title="${clip.name}">${clip.name}</span>
+          <div class="clip-actions">
+            <button onclick="moveClip(${index}, -1)" title="Move Up" ${index === 0 ? "disabled" : ""}>▲</button>
+            <button onclick="moveClip(${index}, 1)" title="Move Down" ${index === playlist.length - 1 ? "disabled" : ""}>▼</button>
+            <button onclick="removeClip(${index})" title="Remove Clip">✕</button>
+          </div>
+        `;
+
+        li.addEventListener("click", (e) => {
+          if (!e.target.closest("button")) {
+            loadClip(index, true);
+          }
+        });
+
+        // Drag and drop handlers
+        li.addEventListener("dragstart", (e) => {
+          li.classList.add("dragging");
+          e.dataTransfer.setData("text/plain", index);
+        });
+        li.addEventListener("dragend", () => li.classList.remove("dragging"));
+
+        clipList.appendChild(li);
+      });
+
+      setupDragAndDrop();
+      updateStatus();
+    }
+
+    // Load & Play Clip
+    function loadClip(index, autoplay = false) {
+      if (index < 0 || index >= playlist.length) return;
+      currentIndex = index;
+      video.src = playlist[currentIndex].url;
+      renderPlaylist();
+      if (autoplay) {
+        video.play().catch(() => {});
+      }
+    }
+
+    // Video Playback Events
+    video.addEventListener("play", () => (playBtn.textContent = "⏸ Pause"));
+    video.addEventListener("pause", () => (playBtn.textContent = "▶ Play"));
+
+    // Seamless Next Clip Transition
+    video.addEventListener("ended", () => {
+      if (currentIndex < playlist.length - 1) {
+        loadClip(currentIndex + 1, true);
+      } else if (loopToggle.checked && playlist.length > 0) {
+        loadClip(0, true);
+      } else {
+        playBtn.textContent = "▶ Play";
+      }
+    });
+
+    // Control Handlers
+    playBtn.addEventListener("click", () => {
+      if (!playlist.length) return;
+      if (video.paused) {
+        if (!video.src && playlist.length > 0) loadClip(currentIndex);
+        video.play();
+      } else {
+        video.pause();
+      }
+    });
+
+    prevBtn.addEventListener("click", () => {
+      if (currentIndex > 0) loadClip(currentIndex - 1, true);
+      else if (loopToggle.checked && playlist.length > 0) loadClip(playlist.length - 1, true);
+    });
+
+    nextBtn.addEventListener("click", () => {
+      if (currentIndex < playlist.length - 1) loadClip(currentIndex + 1, true);
+      else if (loopToggle.checked && playlist.length > 0) loadClip(0, true);
+    });
+
+    restartBtn.addEventListener("click", () => {
+      if (playlist.length > 0) loadClip(0, true);
+    });
+
+    // Clip Management Functions
+    window.moveClip = function (index, direction) {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= playlist.length) return;
+
+      const [movedItem] = playlist.splice(index, 1);
+      playlist.splice(targetIndex, 0, movedItem);
+
+      if (currentIndex === index) currentIndex = targetIndex;
+      else if (currentIndex === targetIndex) currentIndex = index;
+
+      renderPlaylist();
+    };
+
+    window.removeClip = function (index) {
+      URL.revokeObjectURL(playlist[index].url);
+      playlist.splice(index, 1);
+
+      if (currentIndex >= playlist.length) {
+        currentIndex = Math.max(0, playlist.length - 1);
+      }
+      if (playlist.length > 0) {
+        loadClip(currentIndex, !video.paused);
+      } else {
+        video.removeAttribute("src");
+        video.load();
+      }
+      renderPlaylist();
+    };
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      playlist.forEach((c) => URL.revokeObjectURL(c.url));
+      playlist = [];
+      currentIndex = 0;
+      video.removeAttribute("src");
+      video.load();
+      renderPlaylist();
+    });
+
+    function updateStatus() {
+      if (!playlist.length) {
+        statusIndicator.textContent = "No clips loaded";
+      } else {
+        statusIndicator.textContent = `Clip ${currentIndex + 1} of ${playlist.length}`;
+      }
+    }
+
+    // Drag and Drop Sequence Arrangement
+    function setupDragAndDrop() {
+      clipList.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        const draggingItem = document.querySelector(".dragging");
+        const siblings = [...clipList.querySelectorAll(".clip-item:not(.dragging)")];
+        const nextSibling = siblings.find((sibling) => {
+          return e.clientY <= sibling.getBoundingClientRect().top + sibling.offsetHeight / 2;
+        });
+        clipList.insertBefore(draggingItem, nextSibling);
+      });
+
+      clipList.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const reorderedIds = [...clipList.querySelectorAll(".clip-item")].map((el) => {
+          return playlist[parseInt(el.dataset.index)].id;
+        });
+
+        playlist = reorderedIds.map((id) => playlist.find((item) => item.id === id));
+        renderPlaylist();
+      });
+    }
+  </script>
+</body>
+</html>
