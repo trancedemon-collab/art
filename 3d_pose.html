@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Rig Pose Studio - Carmilla</title>
+<style>
+  :root {
+    --bg-base: #242424;
+    --border-color: #383838;
+    --header-bg: #1e1e1e;
+    --text-color: #eeeeec;
+    --btn-bg: #3a3a3a;
+    --btn-hover: #454545;
+    --accent: #3584e4;
+    --accent-hover: #1c71d8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-color);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    height: 48px;
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    z-index: 10;
+  }
+  .header-group { display: flex; align-items: center; gap: 6px; }
+  button, label.file-btn, select {
+    background: var(--btn-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  button:hover, label.file-btn:hover, select:hover { background: var(--btn-hover); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.accent { background: var(--accent); color: #fff; border-color: rgba(0,0,0,0.2); }
+  button.accent:hover { background: var(--accent-hover); }
+  #viewport { flex: 1; position: relative; }
+  #fileInputModel, #fileInputProp, #fileInputJSON { display: none; }
+
+  #statusOverlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(25, 25, 25, 0.9);
+    padding: 14px 24px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    pointer-events: none;
+    display: none;
+    z-index: 30;
+  }
+
+  .floating-panel {
+    position: absolute;
+    background: rgba(30, 30, 30, 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+    z-index: 15;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+  #panelControls {
+    bottom: 16px;
+    left: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    max-width: 80vw;
+  }
+  #panelLibrary {
+    top: 56px;
+    right: 16px;
+    width: 230px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .panel-title { font-weight: 600; font-size: 11px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color); }
+  .control-group { display: flex; align-items: center; gap: 6px; }
+  .control-group label { opacity: 0.85; }
+  input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 80px; }
+
+  #modalJSON {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 520px;
+    max-width: 90vw;
+    background: var(--header-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 50;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #modalJSON textarea {
+    width: 100%;
+    height: 240px;
+    background: var(--bg-base);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 11px;
+    resize: vertical;
+    outline: none;
+  }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<header>
+  <div class="header-group">
+    <button id="btnUndo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+    <button id="btnRedo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+    <button id="btnLoadCarmilla" class="accent">Reload Carmilla</button>
+    <label class="file-btn" for="fileInputModel">Load Rig (.GLB)</label>
+    <input type="file" id="fileInputModel" accept=".glb,.gltf">
+    <label class="file-btn" for="fileInputProp">+ Prop (.GLB)</label>
+    <input type="file" id="fileInputProp" accept=".glb,.gltf">
+  </div>
+
+  <div class="header-group">
+    <select id="renderStyle">
+      <option value="silhouette">Silhouette</option>
+      <option value="textured" selected>Textured & Lit</option>
+      <option value="cartoon">2D Cartoon (Cel)</option>
+      <option value="sketch">2D Sketch Style</option>
+      <option value="wireframe">3D Wireframe</option>
+      <option value="clay">Clay Model</option>
+    </select>
+    <button id="btnJSONModal">AI / JSON Pose</button>
+    <button id="btnCopy">Copy Image</button>
+    <button id="btnExport" class="accent">Export JPEG</button>
+  </div>
+</header>
+
+<div id="viewport">
+  <div id="statusOverlay">Loading model...</div>
+
+  <div id="panelControls" class="floating-panel">
+    <div class="control-group">
+      <label>Mode:</label>
+      <button id="btnToggleMode">Rotate Joints (FK)</button>
+    </div>
+    <div class="control-group">
+      <label><input type="checkbox" id="chkConstraints" checked> Anti-Twist Guards</label>
+    </div>
+    <div class="control-group">
+      <label for="jointWeightScale">Weight Inflate:</label>
+      <input type="range" id="jointWeightScale" min="0.5" max="2.5" step="0.05" value="1.0">
+    </div>
+    <div class="control-group">
+      <label><input type="checkbox" id="chkLowPower" checked> Battery Saver</label>
+    </div>
+    <div class="control-group">
+      <button id="btnResetPose">Reset Pose</button>
+    </div>
+  </div>
+
+  <div id="panelLibrary" class="floating-panel">
+    <div class="panel-title">Saved Pose Library</div>
+    <div class="control-group" style="justify-content: space-between;">
+      <button id="btnSaveLocal" style="flex: 1;">Save Current</button>
+      <button id="btnLoadSelected" class="accent">Load</button>
+      <button id="btnDeletePose">Delete</button>
+    </div>
+    <select id="poseList" size="4" style="width: 100%; height: 80px; background: var(--bg-base); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px;"></select>
+    <div class="control-group" style="justify-content: space-between;">
+      <button id="btnExportFile" style="flex: 1;">Export .JSON</button>
+      <label class="file-btn" for="fileInputJSON" style="flex: 1; justify-content: center;">Import .JSON</label>
+      <input type="file" id="fileInputJSON" accept=".json">
+    </div>
+  </div>
+</div>
+
+<div id="modalJSON">
+  <div class="panel-title">AI Pose Template & Exchange</div>
+  <p style="font-size: 11px; opacity: 0.8;">
+    Copy this JSON to feed into AI, or paste an AI-generated pose below and click Apply:
+  </p>
+  <textarea id="jsonArea" spellcheck="false"></textarea>
+  <div class="modal-actions">
+    <button id="btnCopyPrompt">Copy AI Prompt + JSON</button>
+    <button id="btnApplyJSON" class="accent">Apply Pose</button>
+    <button id="btnCloseModal">Close</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const CARMILLA_URL = 'https://trancedemon-collab.github.io/my_apps/glb/carmilla.glb';
+
+const viewport = document.getElementById('viewport');
+const statusOverlay = document.getElementById('statusOverlay');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xd6d6d6);
+
+const camera = new THREE.PerspectiveCamera(45, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
+camera.position.set(0, 1.3, 2.8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: "low-power" });
+renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+renderer.setPixelRatio(1.0);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.BasicShadowMap;
+viewport.appendChild(renderer.domElement);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.target.set(0, 0.95, 0);
+orbit.update();
+
+const transform = new TransformControls(camera, renderer.domElement);
+transform.size = 0.65;
+transform.setMode('rotate');
+scene.add(transform);
+
+const ikTargetMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.02, 8, 8),
+  new THREE.MeshBasicMaterial({ color: 0xff3b30, visible: false })
+);
+scene.add(ikTargetMesh);
+
+let needsRender = true;
+function requestRender() { needsRender = true; }
+
+orbit.addEventListener('change', requestRender);
+
+// Environment Lighting & Grid
+const grid = new THREE.GridHelper(10, 20, 0x777777, 0xaaaaaa);
+grid.receiveShadow = true;
+scene.add(grid);
+
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dirLight.position.set(2, 4, 3);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 1024;
+dirLight.shadow.mapSize.height = 1024;
+scene.add(dirLight);
+
+// Data structures
+const jointHandles = [];
+const originalMaterials = new Map();
+const initialBoneTransforms = new Map();
+const originalBoneInverses = new Map();
+const boneMap = new Map();
+const skinnedMeshes = [];
+const propsList = [];
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+let currentModelRoot = null;
+let activeBone = null;
+let currentGizmoMode = 'rotate';
+
+// Undo / Redo History
+const undoStack = [];
+const redoStack = [];
+const MAX_HISTORY = 30;
+
+function pushUndoState() {
+  undoStack.push(capturePoseData());
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoRedoUI();
+}
+
+function updateUndoRedoUI() {
+  document.getElementById('btnUndo').disabled = (undoStack.length === 0);
+  document.getElementById('btnRedo').disabled = (redoStack.length === 0);
+}
+
+document.getElementById('btnUndo').addEventListener('click', () => {
+  if (undoStack.length === 0) return;
+  redoStack.push(capturePoseData());
+  const state = undoStack.pop();
+  applyPoseData(state, false);
+  updateUndoRedoUI();
+});
+
+document.getElementById('btnRedo').addEventListener('click', () => {
+  if (redoStack.length === 0) return;
+  undoStack.push(capturePoseData());
+  const state = redoStack.pop();
+  applyPoseData(state, false);
+  updateUndoRedoUI();
+});
+
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('btnUndo').click();
+  } else if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z')) {
+    e.preventDefault();
+    document.getElementById('btnRedo').click();
+  }
+});
+
+// Shading Presets
+const silhouetteMat = new THREE.MeshBasicMaterial({ color: 0x111618 });
+const clayMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6 });
+const wireframeMat = new THREE.MeshBasicMaterial({ color: 0x111618, wireframe: true });
+
+const cartoonMat = new THREE.MeshToonMaterial({
+  color: 0xe0e0e0,
+  gradientMap: (() => {
+    const colors = new Uint8Array([0, 0, 0, 128, 128, 128, 255, 255, 255]);
+    const tex = new THREE.DataTexture(colors, 3, 1, THREE.RedFormat);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    return tex;
+  })()
+});
+
+const sketchMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.5).normalize() }
+  },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vUv = uv * 30.0;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    uniform vec3 uLightDir;
+    void main() {
+      float intensity = dot(vNormal, uLightDir);
+      float pattern = 1.0;
+      if (intensity < 0.7) {
+        if (mod(vUv.x + vUv.y, 2.0) > 1.0) pattern *= 0.6;
+      }
+      if (intensity < 0.4) {
+        if (mod(vUv.x - vUv.y, 2.0) > 1.0) pattern *= 0.4;
+      }
+      if (intensity < 0.15) {
+        pattern = 0.1;
+      }
+      gl_FragColor = vec4(vec3(pattern), 1.0);
+    }
+  `
+});
+
+// Spherical Swing-Cone Clamping
+const CONE_LIMITS = {
+  'Arm': 85 * (Math.PI / 180),
+  'ForeArm': 140 * (Math.PI / 180),
+  'UpLeg': 90 * (Math.PI / 180),
+  'Knee': 145 * (Math.PI / 180),
+  'Leg': 145 * (Math.PI / 180),
+  'Neck': 40 * (Math.PI / 180),
+  'Head': 45 * (Math.PI / 180),
+  'Spine': 30 * (Math.PI / 180)
+};
+
+function enforceBoneLimits(bone) {
+  const initial = initialBoneTransforms.get(bone);
+  if (!initial) return;
+
+  for (const [key, maxAngle] of Object.entries(CONE_LIMITS)) {
+    if (bone.name.includes(key)) {
+      const dot = THREE.MathUtils.clamp(bone.quaternion.dot(initial.quaternion), -1, 1);
+      const angle = 2 * Math.acos(Math.abs(dot));
+
+      if (angle > maxAngle) {
+        bone.quaternion.rotateTowards(initial.quaternion, angle - maxAngle);
+      }
+      break;
+    }
+  }
+}
+
+function clearSceneModel() {
+  if (currentModelRoot) scene.remove(currentModelRoot);
+  currentModelRoot = null;
+  jointHandles.forEach(h => scene.remove(h));
+  jointHandles.length = 0;
+  originalMaterials.clear();
+  initialBoneTransforms.clear();
+  originalBoneInverses.clear();
+  boneMap.clear();
+  skinnedMeshes.length = 0;
+  transform.detach();
+  activeBone = null;
+  undoStack.length = 0;
+  redoStack.length = 0;
+  updateUndoRedoUI();
+}
+
+function setupSkinnedMesh(gltf) {
+  clearSceneModel();
+  currentModelRoot = gltf.scene;
+
+  const box = new THREE.Box3().setFromObject(currentModelRoot);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  orbit.target.set(center.x, center.y, center.z);
+  orbit.update();
+
+  const handleRadius = Math.max(size.y * 0.014, 0.022);
+
+  currentModelRoot.traverse((child) => {
+    if (child.isMesh || child.isSkinnedMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      originalMaterials.set(child, child.material);
+      skinnedMeshes.push(child);
+
+      if (child.isSkinnedMesh && child.skeleton) {
+        child.skeleton.boneInverses.forEach((inv, idx) => {
+          originalBoneInverses.set(`${child.uuid}_${idx}`, inv.clone());
+        });
+      }
+    }
+    if (child.isBone) {
+      boneMap.set(child.name, child);
+      initialBoneTransforms.set(child, {
+        position: child.position.clone(),
+        quaternion: child.quaternion.clone()
+      });
+
+      const handle = new THREE.Mesh(
+        new THREE.SphereGeometry(handleRadius, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0x3584e4, wireframe: true, depthTest: false })
+      );
+      handle.renderOrder = 999;
+      handle.userData.bone = child;
+      scene.add(handle);
+      jointHandles.push(handle);
+    }
+  });
+
+  scene.add(currentModelRoot);
+  applyShadingStyle(document.getElementById('renderStyle').value);
+  updateHandlesPositions();
+  requestRender();
+}
+
+// Joint Weight Inflation
+document.getElementById('jointWeightScale').addEventListener('input', (e) => {
+  const factor = 1.0 / parseFloat(e.target.value);
+  skinnedMeshes.forEach(mesh => {
+    if (mesh.isSkinnedMesh && mesh.skeleton) {
+      mesh.skeleton.boneInverses.forEach((inv, idx) => {
+        const orig = originalBoneInverses.get(`${mesh.uuid}_${idx}`);
+        if (orig) {
+          inv.copy(orig);
+          inv.scale(new THREE.Vector3(factor, factor, factor));
+        }
+      });
+      mesh.skeleton.update();
+    }
+  });
+  requestRender();
+});
+
+// BIOMECHANICAL IK SOLVER: Pole-Vector Locked (No Helicopter Spinning)
+const _vA = new THREE.Vector3();
+const _vB = new THREE.Vector3();
+const _vC = new THREE.Vector3();
+const _vTarget = new THREE.Vector3();
+const _chestUp = new THREE.Vector3();
+const _mLook = new THREE.Matrix4();
+const _qTarget = new THREE.Quaternion();
+
+function solveLimbIK(endBone, targetWorldPos) {
+  const midBone = endBone.parent;
+  if (!midBone || !midBone.isBone) return;
+  const rootBone = midBone.parent;
+  if (!rootBone || !rootBone.isBone) return;
+
+  rootBone.getWorldPosition(_vA);
+  midBone.getWorldPosition(_vB);
+  endBone.getWorldPosition(_vC);
+  _vTarget.copy(targetWorldPos);
+
+  const l1 = _vA.distanceTo(_vB);
+  const l2 = _vB.distanceTo(_vC);
+  const maxReach = (l1 + l2) * 0.96; // 96% extension threshold
+  let dist = _vA.distanceTo(_vTarget);
+
+  // REALISTIC TENSION PULL: If pulling beyond arm reach, drag Hips/Body forward
+  if (dist > maxReach) {
+    const overflow = dist - maxReach;
+    const pullDir = _vTarget.clone().sub(_vA).normalize();
+    const hipBone = boneMap.get('Hips') || boneMap.get('mixamorigHips');
+    if (hipBone) {
+      hipBone.position.add(pullDir.clone().multiplyScalar(overflow * 0.75));
+      hipBone.updateMatrixWorld(true);
+      rootBone.getWorldPosition(_vA);
+      dist = _vA.distanceTo(_vTarget);
+    }
+  }
+
+  // Deadband: prevent pole-vector collapse
+  dist = THREE.MathUtils.clamp(dist, Math.abs(l1 - l2) * 1.05, maxReach);
+
+  // 1. STABLE SHOULDER AIM: Use Chest UP as locked reference to kill axial spinning
+  const chestBone = rootBone.parent;
+  if (chestBone && chestBone.isBone) {
+    _chestUp.set(0, 1, 0).applyQuaternion(chestBone.getWorldQuaternion(new THREE.Quaternion()));
+  } else {
+    _chestUp.set(0, 1, 0);
+  }
+
+  _mLook.lookAt(_vA, _vTarget, _chestUp);
+  _qTarget.setFromRotationMatrix(_mLook);
+
+  // Convert world aim quaternion into parent local bone space
+  if (rootBone.parent) {
+    const invParentQ = rootBone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    rootBone.quaternion.copy(invParentQ.multiply(_qTarget));
+  } else {
+    rootBone.quaternion.copy(_qTarget);
+  }
+
+  // 2. STABLE ELBOW/KNEE HINGE: Law of Cosines purely on local X-axis
+  const cosAngleMid = (l1 * l1 + l2 * l2 - dist * dist) / (2 * l1 * l2);
+  const angleMid = Math.acos(THREE.MathUtils.clamp(cosAngleMid, -1, 1));
+  const bendAngle = Math.PI - angleMid;
+
+  const isLeg = endBone.name.includes('Foot') || endBone.name.includes('Toe');
+  midBone.quaternion.setFromAxisAngle(new THREE.Vector3(isLeg ? -1 : 1, 0, 0), bendAngle);
+
+  if (document.getElementById('chkConstraints').checked) {
+    enforceBoneLimits(rootBone);
+    enforceBoneLimits(midBone);
+  }
+
+  rootBone.updateMatrixWorld(true);
+  midBone.updateMatrixWorld(true);
+  endBone.updateMatrixWorld(true);
+}
+
+// Drag Interaction
+let isTransforming = false;
+
+transform.addEventListener('dragging-changed', (e) => {
+  orbit.enabled = !e.value;
+  if (e.value) {
+    pushUndoState();
+    isTransforming = true;
+  } else {
+    isTransforming = false;
+    if (activeBone && currentGizmoMode === 'free') {
+      activeBone.getWorldPosition(ikTargetMesh.position);
+    }
+  }
+  requestRender();
+});
+
+transform.addEventListener('change', () => {
+  if (!activeBone || !isTransforming) return;
+
+  if (currentGizmoMode === 'free' && transform.getMode() === 'translate') {
+    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
+    if (isRoot) {
+      activeBone.position.copy(ikTargetMesh.position);
+    } else {
+      solveLimbIK(activeBone, ikTargetMesh.position);
+    }
+  } else if (currentGizmoMode === 'rotate') {
+    if (document.getElementById('chkConstraints').checked) {
+      enforceBoneLimits(activeBone);
+    }
+  }
+
+  if (currentModelRoot) {
+    currentModelRoot.traverse(c => {
+      if (c.isBone) c.updateMatrixWorld(true);
+    });
+  }
+  updateHandlesPositions();
+  requestRender();
+});
+
+function applyShadingStyle(style) {
+  skinnedMeshes.forEach(mesh => {
+    if (style === 'silhouette') mesh.material = silhouetteMat;
+    else if (style === 'clay') mesh.material = clayMat;
+    else if (style === 'cartoon') mesh.material = cartoonMat;
+    else if (style === 'sketch') mesh.material = sketchMat;
+    else if (style === 'wireframe') mesh.material = wireframeMat;
+    else mesh.material = originalMaterials.get(mesh) || mesh.material;
+  });
+  requestRender();
+}
+document.getElementById('renderStyle').addEventListener('change', (e) => applyShadingStyle(e.target.value));
+
+viewport.addEventListener('pointerdown', (e) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  const propHits = raycaster.intersectObjects(propsList, true);
+  if (propHits.length > 0) {
+    let topProp = propHits[0].object;
+    while (topProp.parent && topProp.parent !== scene) topProp = topProp.parent;
+    activeBone = null;
+    transform.attach(topProp);
+    transform.setMode('translate');
+    requestRender();
+    return;
+  }
+
+  const hits = raycaster.intersectObjects(jointHandles);
+  if (hits.length > 0) {
+    activeBone = hits[0].object.userData.bone;
+    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
+
+    if (currentGizmoMode === 'free') {
+      activeBone.getWorldPosition(ikTargetMesh.position);
+      transform.attach(ikTargetMesh);
+      transform.setMode('translate');
+    } else {
+      transform.attach(activeBone);
+      transform.setMode(isRoot ? 'translate' : 'rotate');
+    }
+    requestRender();
+  }
+});
+
+const btnToggleMode = document.getElementById('btnToggleMode');
+btnToggleMode.addEventListener('click', () => {
+  if (currentGizmoMode === 'rotate') {
+    currentGizmoMode = 'free';
+    btnToggleMode.innerText = 'Free Drag (IK)';
+  } else {
+    currentGizmoMode = 'rotate';
+    btnToggleMode.innerText = 'Rotate Joints (FK)';
+  }
+
+  if (activeBone) {
+    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
+    if (currentGizmoMode === 'free') {
+      activeBone.getWorldPosition(ikTargetMesh.position);
+      transform.attach(ikTargetMesh);
+      transform.setMode('translate');
+    } else {
+      transform.attach(activeBone);
+      transform.setMode(isRoot ? 'translate' : 'rotate');
+    }
+  }
+  requestRender();
+});
+
+document.getElementById('btnResetPose').addEventListener('click', () => {
+  pushUndoState();
+  initialBoneTransforms.forEach((val, bone) => {
+    bone.position.copy(val.position);
+    bone.quaternion.copy(val.quaternion);
+    bone.updateMatrixWorld(true);
+  });
+  transform.detach();
+  activeBone = null;
+  updateHandlesPositions();
+  requestRender();
+});
+
+const loader = new GLTFLoader();
+
+function loadModelFromUrl(url) {
+  statusOverlay.style.display = 'block';
+  statusOverlay.innerText = 'Loading model...';
+  loader.load(url, (gltf) => {
+    setupSkinnedMesh(gltf);
+    statusOverlay.style.display = 'none';
+  }, undefined, () => {
+    statusOverlay.innerText = 'Failed to load asset.';
+    setTimeout(() => statusOverlay.style.display = 'none', 3000);
+  });
+}
+document.getElementById('btnLoadCarmilla').addEventListener('click', () => loadModelFromUrl(CARMILLA_URL));
+
+document.getElementById('fileInputModel').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    loader.parse(evt.target.result, '', (gltf) => setupSkinnedMesh(gltf));
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('fileInputProp').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    loader.parse(evt.target.result, '', (gltf) => {
+      const prop = gltf.scene;
+      prop.position.set(0.5, 0.5, 0);
+      scene.add(prop);
+      propsList.push(prop);
+      transform.attach(prop);
+      transform.setMode('translate');
+      requestRender();
+    });
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function capturePoseData() {
+  const pose = { format: "pose_3d_v1", bones: {} };
+  initialBoneTransforms.forEach((_, bone) => {
+    pose.bones[bone.name] = {
+      p: [parseFloat(bone.position.x.toFixed(4)), parseFloat(bone.position.y.toFixed(4)), parseFloat(bone.position.z.toFixed(4))],
+      q: [parseFloat(bone.quaternion.x.toFixed(4)), parseFloat(bone.quaternion.y.toFixed(4)), parseFloat(bone.quaternion.z.toFixed(4)), parseFloat(bone.quaternion.w.toFixed(4))]
+    };
+  });
+  return pose;
+}
+
+function applyPoseData(poseObj, recordHistory = true) {
+  if (!poseObj || !poseObj.bones) return;
+  if (recordHistory) pushUndoState();
+
+  for (const [name, b] of Object.entries(poseObj.bones)) {
+    const bone = boneMap.get(name);
+    if (bone) {
+      bone.position.set(b.p[0], b.p[1], b.p[2]);
+      bone.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
+      bone.updateMatrixWorld(true);
+    }
+  }
+  if (currentModelRoot) {
+    currentModelRoot.traverse(c => {
+      if (c.isBone) c.updateMatrixWorld(true);
+      if (c.isSkinnedMesh && c.skeleton) c.skeleton.update();
+    });
+  }
+  updateHandlesPositions();
+  requestRender();
+}
+
+const poseList = document.getElementById('poseList');
+
+function refreshPoseList() {
+  poseList.innerHTML = '';
+  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
+  Object.keys(library).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.innerText = name;
+    poseList.appendChild(opt);
+  });
+}
+refreshPoseList();
+
+function loadCurrentSelection() {
+  if (!poseList.value) return;
+  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
+  if (library[poseList.value]) applyPoseData(library[poseList.value]);
+}
+
+poseList.addEventListener('change', loadCurrentSelection);
+poseList.addEventListener('click', loadCurrentSelection);
+document.getElementById('btnLoadSelected').addEventListener('click', loadCurrentSelection);
+
+document.getElementById('btnSaveLocal').addEventListener('click', () => {
+  const name = prompt('Name this pose:', `Pose ${new Date().toLocaleTimeString()}`);
+  if (!name) return;
+  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
+  library[name] = capturePoseData();
+  localStorage.setItem('3d_pose_library', JSON.stringify(library));
+  refreshPoseList();
+  poseList.value = name;
+});
+
+document.getElementById('btnDeletePose').addEventListener('click', () => {
+  if (!poseList.value) return;
+  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
+  delete library[poseList.value];
+  localStorage.setItem('3d_pose_library', JSON.stringify(library));
+  refreshPoseList();
+});
+
+document.getElementById('btnExportFile').addEventListener('click', () => {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(capturePoseData(), null, 2));
+  const dlAnchor = document.createElement('a');
+  dlAnchor.setAttribute("href", dataStr);
+  dlAnchor.setAttribute("download", `pose-${Date.now()}.json`);
+  dlAnchor.click();
+});
+
+document.getElementById('fileInputJSON').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const parsed = JSON.parse(evt.target.result);
+      applyPoseData(parsed);
+    } catch (err) { alert('Invalid JSON file.'); }
+  };
+  reader.readAsText(file);
+});
+
+const modalJSON = document.getElementById('modalJSON');
+const jsonArea = document.getElementById('jsonArea');
+
+document.getElementById('btnJSONModal').addEventListener('click', () => {
+  jsonArea.value = JSON.stringify(capturePoseData(), null, 2);
+  modalJSON.style.display = 'flex';
+});
+document.getElementById('btnCloseModal').addEventListener('click', () => modalJSON.style.display = 'none');
+
+document.getElementById('btnApplyJSON').addEventListener('click', () => {
+  try {
+    const data = JSON.parse(jsonArea.value);
+    applyPoseData(data);
+    modalJSON.style.display = 'none';
+  } catch (e) { alert('Invalid JSON syntax.'); }
+});
+
+document.getElementById('btnCopyPrompt').addEventListener('click', () => {
+  const promptText = `I have a 3D humanoid model (Carmilla) rigged with standard Mixamo bone naming conventions. Here is the rest pose JSON format:\n\n\`\`\`json\n${jsonArea.value}\n\`\`\`\n\nPlease modify the "p" (position [x, y, z]) and "q" (quaternion [x, y, z, w]) values for the appropriate limbs to achieve the following pose: [DESCRIBE YOUR POSE HERE]. Return strictly the valid JSON.`;
+  navigator.clipboard.writeText(promptText).then(() => alert('AI Prompt + JSON template copied to clipboard!'));
+});
+
+function renderClean(callback) {
+  const prevGrid = grid.visible;
+  grid.visible = false;
+  transform.detach();
+  jointHandles.forEach(h => h.visible = false);
+
+  renderer.render(scene, camera);
+  callback(renderer.domElement);
+
+  grid.visible = prevGrid;
+  jointHandles.forEach(h => h.visible = true);
+  if (activeBone) {
+    if (currentGizmoMode === 'free') {
+      transform.attach(ikTargetMesh);
+    } else {
+      transform.attach(activeBone);
+    }
+  }
+  requestRender();
+}
+
+document.getElementById('btnExport').addEventListener('click', () => {
+  renderClean((canvasElem) => {
+    const link = document.createElement('a');
+    link.download = `carmilla-pose-${Date.now()}.jpg`;
+    link.href = canvasElem.toDataURL('image/jpeg', 0.95);
+    link.click();
+  });
+});
+
+document.getElementById('btnCopy').addEventListener('click', () => {
+  renderClean((canvasElem) => {
+    canvasElem.toBlob(async (blob) => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        alert('Image copied to clipboard.');
+      } catch (err) { alert('Clipboard write failed.'); }
+    }, 'image/png');
+  });
+});
+
+function updateHandlesPositions() {
+  jointHandles.forEach(h => h.userData.bone.getWorldPosition(h.position));
+}
+
+const chkLowPower = document.getElementById('chkLowPower');
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (needsRender || !chkLowPower.checked) {
+    updateHandlesPositions();
+    renderer.render(scene, camera);
+    needsRender = false;
+  }
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = viewport.clientWidth / viewport.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+  requestRender();
+});
+
+loadModelFromUrl(CARMILLA_URL);
+</script>
+</body>
+</html>
