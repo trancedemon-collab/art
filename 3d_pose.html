@@ -15,6 +15,7 @@
     --accent: #3584e4;
     --accent-hover: #1c71d8;
     --danger: #e01b24;
+    --setpose-color: #ff9500;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
   body {
@@ -55,6 +56,7 @@
   button.accent { background: var(--accent); color: #fff; border-color: rgba(0,0,0,0.2); }
   button.accent:hover { background: var(--accent-hover); }
   button.danger { background: var(--danger); color: #fff; }
+  button.setpose-active { background: var(--setpose-color); color: #fff; border-color: rgba(0,0,0,0.2); font-weight: 600; }
   #viewport { flex: 1; position: relative; }
   #fileInputRig, #fileInputProp, #fileInputJSON { display: none; }
 
@@ -71,6 +73,17 @@
     pointer-events: none;
     display: none;
     z-index: 30;
+  }
+
+  /* 2D Arc Overlay for SetPose manipulation */
+  #arcCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
   }
 
   .floating-panel {
@@ -91,7 +104,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    max-width: 85vw;
+    max-width: 88vw;
   }
   #panelLibrary {
     top: 56px;
@@ -181,6 +194,7 @@
 
 <div id="viewport">
   <div id="statusOverlay">Loading model...</div>
+  <canvas id="arcCanvas"></canvas>
 
   <div id="panelControls" class="floating-panel">
     <div class="control-group">
@@ -188,12 +202,13 @@
       <select id="activeCharSelect"></select>
       <button id="btnRemoveChar" class="danger">Remove</button>
     </div>
+    <!-- Interaction Preset Toggle -->
     <div class="control-group">
-      <label>Target:</label>
-      <button id="btnControlTarget" class="accent">Joints Mode</button>
+      <label>Control:</label>
+      <button id="btnControlSystem" class="setpose-active">SetPose (Arcball)</button>
     </div>
-    <div class="control-group">
-      <label>Action:</label>
+    <div class="control-group" id="gizmoSubControls" style="display: none;">
+      <button id="btnControlTarget">Joints Mode</button>
       <button id="btnGizmoAction">Rotate (R)</button>
     </div>
     <div class="control-group">
@@ -260,6 +275,8 @@ const LEXA_URL = 'https://trancedemon-collab.github.io/my_apps/glb/Lexa_Drake.gl
 
 const viewport = document.getElementById('viewport');
 const statusOverlay = document.getElementById('statusOverlay');
+const arcCanvas = document.getElementById('arcCanvas');
+const arcCtx = arcCanvas.getContext('2d');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xd6d6d6);
@@ -278,6 +295,7 @@ const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.target.set(0, 0.95, 0);
 orbit.update();
 
+// Classic Gizmo TransformControls
 const transform = new TransformControls(camera, renderer.domElement);
 transform.size = 0.65;
 transform.setMode('rotate');
@@ -291,17 +309,35 @@ scene.add(ikTargetMesh);
 
 let needsRender = true;
 function requestRender() { needsRender = true; }
-
 orbit.addEventListener('change', requestRender);
 
-let isTurntableActive = false;
-const btnTurntable = document.getElementById('btnTurntable');
-btnTurntable.addEventListener('click', () => {
-  isTurntableActive = !isTurntableActive;
-  btnTurntable.classList.toggle('accent', isTurntableActive);
+// Control System Architecture: 'setpose' vs 'gizmo'
+let currentSystem = 'setpose'; // Default to SetPose mode
+let currentControlTarget = 'joint';
+let currentGizmoAction = 'rotate';
+
+const btnControlSystem = document.getElementById('btnControlSystem');
+const gizmoSubControls = document.getElementById('gizmoSubControls');
+
+btnControlSystem.addEventListener('click', () => {
+  if (currentSystem === 'setpose') {
+    currentSystem = 'gizmo';
+    btnControlSystem.innerText = 'Classic Gizmo';
+    btnControlSystem.classList.remove('setpose-active');
+    btnControlSystem.classList.add('accent');
+    gizmoSubControls.style.display = 'flex';
+  } else {
+    currentSystem = 'setpose';
+    btnControlSystem.innerText = 'SetPose (Arcball)';
+    btnControlSystem.classList.remove('accent');
+    btnControlSystem.classList.add('setpose-active');
+    gizmoSubControls.style.display = 'none';
+    transform.detach();
+  }
   requestRender();
 });
 
+// Environment
 const grid = new THREE.GridHelper(10, 20, 0x777777, 0xaaaaaa);
 grid.receiveShadow = true;
 scene.add(grid);
@@ -319,13 +355,12 @@ scene.add(dirLight);
 const characters = [];
 let activeCharIndex = -1;
 let activeBone = null;
-let currentControlTarget = 'joint'; // 'joint' or 'global'
-let currentGizmoAction = 'rotate';   // 'rotate' or 'translate'
 const propsList = [];
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
+// Shading Presets
 const clayMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6 });
 const wireframeMat = new THREE.MeshBasicMaterial({ color: 0x111618, wireframe: true });
 
@@ -423,7 +458,7 @@ function updateCharSelectUI() {
 document.getElementById('activeCharSelect').addEventListener('change', (e) => {
   activeCharIndex = parseInt(e.target.value, 10);
   activeBone = null;
-  syncGizmoBinding();
+  transform.detach();
   updateCharSelectUI();
   requestRender();
 });
@@ -437,97 +472,7 @@ document.getElementById('btnRemoveChar').addEventListener('click', () => {
   transform.detach();
   activeBone = null;
   activeCharIndex = characters.length - 1;
-  syncGizmoBinding();
   updateCharSelectUI();
-  requestRender();
-});
-
-// Synchronize gizmo target (Whole Model vs Individual Joint)
-function syncGizmoBinding() {
-  const char = getActiveCharacter();
-  if (!char) {
-    transform.detach();
-    return;
-  }
-
-  if (currentControlTarget === 'global') {
-    transform.attach(char.root);
-    transform.setMode(currentGizmoAction);
-  } else {
-    if (activeBone) {
-      const isRoot = !activeBone.parent || !activeBone.parent.isBone;
-      if (currentGizmoAction === 'translate' && !isRoot) {
-        activeBone.getWorldPosition(ikTargetMesh.position);
-        transform.attach(ikTargetMesh);
-        transform.setMode('translate');
-      } else {
-        transform.attach(activeBone);
-        transform.setMode(isRoot ? 'translate' : currentGizmoAction);
-      }
-    } else {
-      transform.detach();
-    }
-  }
-}
-
-// Toggle Target: Joints Mode vs Entire Model Mode
-const btnControlTarget = document.getElementById('btnControlTarget');
-btnControlTarget.addEventListener('click', () => {
-  if (currentControlTarget === 'joint') {
-    currentControlTarget = 'global';
-    btnControlTarget.innerText = 'Entire Model';
-    btnControlTarget.classList.remove('accent');
-    btnControlTarget.classList.add('danger');
-  } else {
-    currentControlTarget = 'joint';
-    btnControlTarget.innerText = 'Joints Mode';
-    btnControlTarget.classList.remove('danger');
-    btnControlTarget.classList.add('accent');
-  }
-  syncGizmoBinding();
-  requestRender();
-});
-
-// Toggle Action: Rotate (R) vs Move (T)
-const btnGizmoAction = document.getElementById('btnGizmoAction');
-function setGizmoAction(mode) {
-  currentGizmoAction = mode;
-  btnGizmoAction.innerText = mode === 'rotate' ? 'Rotate (R)' : 'Move (T)';
-  syncGizmoBinding();
-  requestRender();
-}
-
-btnGizmoAction.addEventListener('click', () => {
-  setGizmoAction(currentGizmoAction === 'rotate' ? 'translate' : 'rotate');
-});
-
-window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  if (e.key === 'r' || e.key === 'R') setGizmoAction('rotate');
-  if (e.key === 't' || e.key === 'T') setGizmoAction('translate');
-  if (e.key === 'g' || e.key === 'G') btnControlTarget.click();
-});
-
-// Make characters face one another
-document.getElementById('btnFaceEachOther').addEventListener('click', () => {
-  if (characters.length < 2) {
-    alert('Add at least two characters to use this feature.');
-    return;
-  }
-  const char = getActiveCharacter();
-  if (!char) return;
-
-  pushUndoState();
-  const otherIndex = (activeCharIndex === 0) ? 1 : 0;
-  const otherChar = characters[otherIndex];
-
-  const targetVec = new THREE.Vector3();
-  otherChar.root.getWorldPosition(targetVec);
-  targetVec.y = char.root.position.y; // Keep level horizontally
-
-  char.root.lookAt(targetVec);
-  char.root.updateMatrixWorld(true);
-  updateHandlesPositions();
   requestRender();
 });
 
@@ -583,6 +528,28 @@ document.getElementById('charSilhouetteColor').addEventListener('input', (e) => 
   if (!char) return;
   char.silhouetteColor = e.target.value;
   char.silhouetteMat.color.set(char.silhouetteColor);
+  requestRender();
+});
+
+document.getElementById('btnFaceEachOther').addEventListener('click', () => {
+  if (characters.length < 2) {
+    alert('Add at least two characters to use this feature.');
+    return;
+  }
+  const char = getActiveCharacter();
+  if (!char) return;
+
+  pushUndoState();
+  const otherIndex = (activeCharIndex === 0) ? 1 : 0;
+  const otherChar = characters[otherIndex];
+
+  const targetVec = new THREE.Vector3();
+  otherChar.root.getWorldPosition(targetVec);
+  targetVec.y = char.root.position.y;
+
+  char.root.lookAt(targetVec);
+  char.root.updateMatrixWorld(true);
+  updateHandlesPositions();
   requestRender();
 });
 
@@ -646,7 +613,6 @@ function addCharacterFromGLTF(gltf, name) {
   applyShadingStyle(document.getElementById('renderStyle').value);
   updateCharSelectUI();
   updateHandlesPositions();
-  syncGizmoBinding();
   requestRender();
 }
 
@@ -701,80 +667,80 @@ document.getElementById('fileInputProp').addEventListener('change', (e) => {
   reader.readAsArrayBuffer(file);
 });
 
-// IK Solver
-const _vA = new THREE.Vector3();
-const _vB = new THREE.Vector3();
-const _vC = new THREE.Vector3();
-const _vTarget = new THREE.Vector3();
-const _chestUp = new THREE.Vector3();
-const _mLook = new THREE.Matrix4();
-const _qTarget = new THREE.Quaternion();
+// ==========================================
+// SETPOSE-STYLE ARCBALL ROTATION & DRAG ENGINE
+// ==========================================
+let isSetPoseDragging = false;
+let setPoseBone = null;
+let setPoseChar = null;
+let dragStartPoint = { x: 0, y: 0 };
+let currentDragPoint = { x: 0, y: 0 };
+let initialBoneQuat = new THREE.Quaternion();
+let boneWorldPos = new THREE.Vector3();
+let boneScreenPos = new THREE.Vector2();
 
-function solveLimbIK(endBone, targetWorldPos, char) {
-  const midBone = endBone.parent;
-  if (!midBone || !midBone.isBone) return;
-  const rootBone = midBone.parent;
-  if (!rootBone || !rootBone.isBone) return;
-
-  rootBone.getWorldPosition(_vA);
-  midBone.getWorldPosition(_vB);
-  endBone.getWorldPosition(_vC);
-  _vTarget.copy(targetWorldPos);
-
-  const l1 = _vA.distanceTo(_vB);
-  const l2 = _vB.distanceTo(_vC);
-  const maxReach = (l1 + l2) * 0.96;
-  let dist = _vA.distanceTo(_vTarget);
-
-  if (dist > maxReach) {
-    const overflow = dist - maxReach;
-    const pullDir = _vTarget.clone().sub(_vA).normalize();
-    const hipBone = char.boneMap.get('Hips') || char.boneMap.get('mixamorigHips');
-    if (hipBone) {
-      hipBone.position.add(pullDir.clone().multiplyScalar(overflow * 0.75));
-      hipBone.updateMatrixWorld(true);
-      rootBone.getWorldPosition(_vA);
-      dist = _vA.distanceTo(_vTarget);
-    }
-  }
-
-  dist = THREE.MathUtils.clamp(dist, Math.abs(l1 - l2) * 1.05, maxReach);
-
-  const chestBone = rootBone.parent;
-  if (chestBone && chestBone.isBone) {
-    _chestUp.set(0, 1, 0).applyQuaternion(chestBone.getWorldQuaternion(new THREE.Quaternion()));
-  } else {
-    _chestUp.set(0, 1, 0);
-  }
-
-  _mLook.lookAt(_vA, _vTarget, _chestUp);
-  _qTarget.setFromRotationMatrix(_mLook);
-
-  if (rootBone.parent) {
-    const invParentQ = rootBone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
-    rootBone.quaternion.copy(invParentQ.multiply(_qTarget));
-  } else {
-    rootBone.quaternion.copy(_qTarget);
-  }
-
-  const cosAngleMid = (l1 * l1 + l2 * l2 - dist * dist) / (2 * l1 * l2);
-  const angleMid = Math.acos(THREE.MathUtils.clamp(cosAngleMid, -1, 1));
-  const bendAngle = Math.PI - angleMid;
-
-  const isLeg = endBone.name.includes('Foot') || endBone.name.includes('Toe');
-  midBone.quaternion.setFromAxisAngle(new THREE.Vector3(isLeg ? -1 : 1, 0, 0), bendAngle);
-
-  if (document.getElementById('chkConstraints').checked) {
-    enforceBoneLimits(rootBone, char.initialBoneTransforms);
-    enforceBoneLimits(midBone, char.initialBoneTransforms);
-  }
-
-  rootBone.updateMatrixWorld(true);
-  midBone.updateMatrixWorld(true);
-  endBone.updateMatrixWorld(true);
+function updateScreenCoords(worldVec, screenVec) {
+  const temp = worldVec.clone().project(camera);
+  screenVec.x = (temp.x * 0.5 + 0.5) * viewport.clientWidth;
+  screenVec.y = (-(temp.y * 0.5) + 0.5) * viewport.clientHeight;
 }
 
-// Raycasting Click Handling
+function drawSetPoseOverlay() {
+  arcCtx.clearRect(0, 0, arcCanvas.width, arcCanvas.height);
+  if (!isSetPoseDragging || !setPoseBone) return;
+
+  const cx = boneScreenPos.x;
+  const cy = boneScreenPos.y;
+  const mx = currentDragPoint.x;
+  const my = currentDragPoint.y;
+
+  const dx = mx - cx;
+  const dy = my - cy;
+  const currentRadius = Math.hypot(dx, dy);
+  const startAngle = Math.atan2(dragStartPoint.y - cy, dragStartPoint.x - cx);
+  const endAngle = Math.atan2(dy, dx);
+
+  // Outer reference guide circle
+  arcCtx.beginPath();
+  arcCtx.arc(cx, cy, 60, 0, Math.PI * 2);
+  arcCtx.strokeStyle = "rgba(255, 149, 0, 0.25)";
+  arcCtx.lineWidth = 2;
+  arcCtx.stroke();
+
+  // Angular deflection slice
+  arcCtx.beginPath();
+  arcCtx.moveTo(cx, cy);
+  arcCtx.arc(cx, cy, Math.max(30, Math.min(currentRadius, 100)), startAngle, endAngle, false);
+  arcCtx.closePath();
+  arcCtx.fillStyle = "rgba(255, 149, 0, 0.2)";
+  arcCtx.fill();
+
+  // Active directional ray
+  arcCtx.beginPath();
+  arcCtx.moveTo(cx, cy);
+  arcCtx.lineTo(mx, my);
+  arcCtx.strokeStyle = "#ff9500";
+  arcCtx.lineWidth = 2.5;
+  arcCtx.stroke();
+
+  // Pivot point dot
+  arcCtx.beginPath();
+  arcCtx.arc(cx, cy, 5, 0, Math.PI * 2);
+  arcCtx.fillStyle = "#ffffff";
+  arcCtx.fill();
+  arcCtx.strokeStyle = "#ff9500";
+  arcCtx.lineWidth = 2;
+  arcCtx.stroke();
+}
+
+function resizeArcCanvas() {
+  arcCanvas.width = viewport.clientWidth;
+  arcCanvas.height = viewport.clientHeight;
+}
+resizeArcCanvas();
+window.addEventListener('resize', resizeArcCanvas);
+
+// Viewport Mouse / Pointer Events
 viewport.addEventListener('pointerdown', (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -782,6 +748,7 @@ viewport.addEventListener('pointerdown', (e) => {
 
   raycaster.setFromCamera(mouse, camera);
 
+  // Check props
   const propHits = raycaster.intersectObjects(propsList, true);
   if (propHits.length > 0) {
     let topProp = propHits[0].object;
@@ -793,6 +760,7 @@ viewport.addEventListener('pointerdown', (e) => {
     return;
   }
 
+  // Intersect handles across characters
   const allHandles = characters.flatMap(c => c.jointHandles);
   const hits = raycaster.intersectObjects(allHandles);
 
@@ -803,59 +771,122 @@ viewport.addEventListener('pointerdown', (e) => {
     activeCharIndex = characters.indexOf(char);
     updateCharSelectUI();
 
-    // If in global mode, clicking a bone focuses that character's whole body
-    if (currentControlTarget === 'global') {
-      transform.attach(char.root);
-      transform.setMode(currentGizmoAction);
+    if (currentSystem === 'setpose') {
+      // Initiate SetPose-style direct rotational drag
+      isSetPoseDragging = true;
+      setPoseBone = activeBone;
+      setPoseChar = char;
+      dragStartPoint.x = e.clientX - rect.left;
+      dragStartPoint.y = e.clientY - rect.top;
+      currentDragPoint.x = dragStartPoint.x;
+      currentDragPoint.y = dragStartPoint.y;
+
+      initialBoneQuat.copy(setPoseBone.quaternion);
+      setPoseBone.getWorldPosition(boneWorldPos);
+      updateScreenCoords(boneWorldPos, boneScreenPos);
+
+      orbit.enabled = false; // Disable camera orbit while dragging joint
+      pushUndoState();
+      drawSetPoseOverlay();
+      requestRender();
+      return;
     } else {
-      syncGizmoBinding();
+      // Classic Gizmo path
+      if (currentControlTarget === 'global') {
+        transform.attach(char.root);
+        transform.setMode(currentGizmoAction);
+      } else {
+        const isRoot = !activeBone.parent || !activeBone.parent.isBone;
+        if (currentGizmoAction === 'translate' && !isRoot) {
+          activeBone.getWorldPosition(ikTargetMesh.position);
+          transform.attach(ikTargetMesh);
+          transform.setMode('translate');
+        } else {
+          transform.attach(activeBone);
+          transform.setMode(isRoot ? 'translate' : currentGizmoAction);
+        }
+      }
+      requestRender();
     }
+  }
+});
+
+window.addEventListener('pointermove', (e) => {
+  if (isSetPoseDragging && setPoseBone) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    currentDragPoint.x = e.clientX - rect.left;
+    currentDragPoint.y = e.clientY - rect.top;
+
+    const deltaX = currentDragPoint.x - dragStartPoint.x;
+    const deltaY = currentDragPoint.y - dragStartPoint.y;
+
+    // View-aligned screen space rotation:
+    // Dragging horizontally rotates around camera's Up vector; vertically rotates around camera's Right vector
+    const rotSpeed = 0.008;
+    const cameraUp = camera.up.clone().applyQuaternion(camera.quaternion);
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(cameraUp, deltaX * rotSpeed);
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(cameraRight, deltaY * rotSpeed);
+    const qDeltaWorld = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
+
+    // Convert world delta into bone's parent local space
+    const parentWorldQuat = setPoseBone.parent ? setPoseBone.parent.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
+    const invParent = parentWorldQuat.clone().invert();
+
+    const qDeltaLocal = new THREE.Quaternion()
+      .copy(invParent)
+      .multiply(qDeltaWorld)
+      .multiply(parentWorldQuat);
+
+    // Apply to baseline
+    setPoseBone.quaternion.copy(qDeltaLocal.multiply(initialBoneQuat));
+
+    if (document.getElementById('chkConstraints').checked) {
+      enforceBoneLimits(setPoseBone, setPoseChar.initialBoneTransforms);
+    }
+
+    setPoseChar.root.traverse(c => {
+      if (c.isBone) c.updateMatrixWorld(true);
+    });
+
+    updateHandlesPositions();
+    drawSetPoseOverlay();
     requestRender();
   }
 });
 
-let isTransforming = false;
+window.addEventListener('pointerup', () => {
+  if (isSetPoseDragging) {
+    isSetPoseDragging = false;
+    setPoseBone = null;
+    orbit.enabled = true;
+    arcCtx.clearRect(0, 0, arcCanvas.width, arcCanvas.height);
+    requestRender();
+  }
+});
 
-transform.addEventListener('dragging-changed', (e) => {
-  orbit.enabled = !e.value;
-  if (e.value) {
-    pushUndoState();
-    isTransforming = true;
-  } else {
-    isTransforming = false;
-    if (activeBone && currentControlTarget === 'joint' && currentGizmoAction === 'translate') {
-      activeBone.getWorldPosition(ikTargetMesh.position);
-    }
+// Classic Gizmo Mode bindings
+const btnControlTarget = document.getElementById('btnControlTarget');
+btnControlTarget.addEventListener('click', () => {
+  currentControlTarget = (currentControlTarget === 'joint') ? 'global' : 'joint';
+  btnControlTarget.innerText = (currentControlTarget === 'joint') ? 'Joints Mode' : 'Entire Model';
+  const char = getActiveCharacter();
+  if (char && currentControlTarget === 'global') {
+    transform.attach(char.root);
+    transform.setMode(currentGizmoAction);
+  } else if (activeBone) {
+    transform.attach(activeBone);
+    transform.setMode(currentGizmoAction);
   }
   requestRender();
 });
 
-transform.addEventListener('change', () => {
-  if (!isTransforming) return;
-  const char = getActiveCharacter();
-  if (!char) return;
-
-  if (currentControlTarget === 'global') {
-    char.root.updateMatrixWorld(true);
-  } else if (activeBone) {
-    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
-    if (currentGizmoAction === 'translate') {
-      if (isRoot) {
-        activeBone.position.copy(ikTargetMesh.position);
-      } else {
-        solveLimbIK(activeBone, ikTargetMesh.position, char);
-      }
-    } else if (currentGizmoAction === 'rotate') {
-      if (document.getElementById('chkConstraints').checked) {
-        enforceBoneLimits(activeBone, char.initialBoneTransforms);
-      }
-    }
-    char.root.traverse(c => {
-      if (c.isBone) c.updateMatrixWorld(true);
-    });
-  }
-
-  updateHandlesPositions();
+const btnGizmoAction = document.getElementById('btnGizmoAction');
+btnGizmoAction.addEventListener('click', () => {
+  currentGizmoAction = (currentGizmoAction === 'rotate') ? 'translate' : 'rotate';
+  btnGizmoAction.innerText = (currentGizmoAction === 'rotate') ? 'Rotate (R)' : 'Move (T)';
+  transform.setMode(currentGizmoAction);
   requestRender();
 });
 
@@ -894,6 +925,7 @@ document.getElementById('btnRedo').addEventListener('click', () => {
 });
 
 window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
     document.getElementById('btnUndo').click();
@@ -924,15 +956,10 @@ function captureCharPose(char) {
 
 function applyCharPose(char, poseObj) {
   if (!char || !poseObj || !poseObj.bones) return;
-  if (poseObj.scale) {
-    char.root.scale.set(poseObj.scale, poseObj.scale, poseObj.scale);
-  }
-  if (poseObj.position) {
-    char.root.position.set(poseObj.position[0], poseObj.position[1], poseObj.position[2]);
-  }
-  if (poseObj.rotation) {
-    char.root.quaternion.set(poseObj.rotation[0], poseObj.rotation[1], poseObj.rotation[2], poseObj.rotation[3]);
-  }
+  if (poseObj.scale) char.root.scale.set(poseObj.scale, poseObj.scale, poseObj.scale);
+  if (poseObj.position) char.root.position.set(poseObj.position[0], poseObj.position[1], poseObj.position[2]);
+  if (poseObj.rotation) char.root.quaternion.set(poseObj.rotation[0], poseObj.rotation[1], poseObj.rotation[2], poseObj.rotation[3]);
+
   for (const [name, b] of Object.entries(poseObj.bones)) {
     const bone = char.boneMap.get(name);
     if (bone) {
@@ -1095,19 +1122,19 @@ function applyShadingStyle(style) {
 }
 document.getElementById('renderStyle').addEventListener('change', (e) => applyShadingStyle(e.target.value));
 
-// Export Images
+// Export Clean Images
 function renderClean(callback) {
   const prevGrid = grid.visible;
   grid.visible = false;
   transform.detach();
   characters.forEach(c => c.jointHandles.forEach(h => h.visible = false));
+  arcCtx.clearRect(0, 0, arcCanvas.width, arcCanvas.height);
 
   renderer.render(scene, camera);
   callback(renderer.domElement);
 
   grid.visible = prevGrid;
   characters.forEach(c => c.jointHandles.forEach(h => h.visible = true));
-  syncGizmoBinding();
   requestRender();
 }
 
@@ -1142,15 +1169,6 @@ const chkLowPower = document.getElementById('chkLowPower');
 function animate() {
   requestAnimationFrame(animate);
 
-  if (isTurntableActive) {
-    orbit.autoRotate = true;
-    orbit.autoRotateSpeed = 2.0;
-    orbit.update();
-    needsRender = true;
-  } else {
-    orbit.autoRotate = false;
-  }
-
   if (needsRender || !chkLowPower.checked) {
     updateHandlesPositions();
     renderer.render(scene, camera);
@@ -1163,9 +1181,11 @@ window.addEventListener('resize', () => {
   camera.aspect = viewport.clientWidth / viewport.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+  resizeArcCanvas();
   requestRender();
 });
 
+// Boot Carmilla
 loadModelUrl(CARMILLA_URL, 'Carmilla');
 </script>
 </body>
