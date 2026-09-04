@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Rig Pose Studio - Carmilla</title>
+<title>3D Multi-Character Pose Studio</title>
 <style>
   :root {
     --bg-base: #242424;
@@ -14,6 +14,7 @@
     --btn-hover: #454545;
     --accent: #3584e4;
     --accent-hover: #1c71d8;
+    --danger: #e01b24;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
   body {
@@ -36,7 +37,7 @@
     z-index: 10;
   }
   .header-group { display: flex; align-items: center; gap: 6px; }
-  button, label.file-btn, select {
+  button, label.file-btn, select, input[type="text"] {
     background: var(--btn-bg);
     color: var(--text-color);
     border: 1px solid var(--border-color);
@@ -48,12 +49,14 @@
     align-items: center;
     gap: 4px;
   }
+  input[type="text"] { cursor: text; }
   button:hover, label.file-btn:hover, select:hover { background: var(--btn-hover); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.accent { background: var(--accent); color: #fff; border-color: rgba(0,0,0,0.2); }
   button.accent:hover { background: var(--accent-hover); }
+  button.danger { background: var(--danger); color: #fff; }
   #viewport { flex: 1; position: relative; }
-  #fileInputModel, #fileInputProp, #fileInputJSON { display: none; }
+  #fileInputRig, #fileInputProp, #fileInputJSON { display: none; }
 
   #statusOverlay {
     position: absolute;
@@ -72,7 +75,7 @@
 
   .floating-panel {
     position: absolute;
-    background: rgba(30, 30, 30, 0.85);
+    background: rgba(30, 30, 30, 0.88);
     backdrop-filter: blur(6px);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -87,13 +90,13 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    max-width: 80vw;
+    gap: 8px;
+    max-width: 85vw;
   }
   #panelLibrary {
     top: 56px;
     right: 16px;
-    width: 230px;
+    width: 250px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -101,7 +104,8 @@
   .panel-title { font-weight: 600; font-size: 11px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color); }
   .control-group { display: flex; align-items: center; gap: 6px; }
   .control-group label { opacity: 0.85; }
-  input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 80px; }
+  input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 70px; }
+  input[type="color"] { border: none; width: 24px; height: 22px; padding: 0; background: transparent; cursor: pointer; }
 
   #modalJSON {
     position: absolute;
@@ -150,10 +154,12 @@
   <div class="header-group">
     <button id="btnUndo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
     <button id="btnRedo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
-    <button id="btnLoadCarmilla" class="accent">Reload Carmilla</button>
-    <label class="file-btn" for="fileInputModel">Load Rig (.GLB)</label>
-    <input type="file" id="fileInputModel" accept=".glb,.gltf">
-    <label class="file-btn" for="fileInputProp">+ Prop (.GLB)</label>
+    <button id="btnAddCarmilla" class="accent">+ Carmilla</button>
+    <button id="btnAddLexa" class="accent">+ Lexa Drake</button>
+    <button id="btnAddUrl">URL GLB...</button>
+    <label class="file-btn" for="fileInputRig">+ Local Rig</label>
+    <input type="file" id="fileInputRig" accept=".glb,.gltf">
+    <label class="file-btn" for="fileInputProp">+ Prop</label>
     <input type="file" id="fileInputProp" accept=".glb,.gltf">
   </div>
 
@@ -166,6 +172,7 @@
       <option value="wireframe">3D Wireframe</option>
       <option value="clay">Clay Model</option>
     </select>
+    <button id="btnTurntable">360° View</button>
     <button id="btnJSONModal">AI / JSON Pose</button>
     <button id="btnCopy">Copy Image</button>
     <button id="btnExport" class="accent">Export JPEG</button>
@@ -177,26 +184,44 @@
 
   <div id="panelControls" class="floating-panel">
     <div class="control-group">
-      <label>Mode:</label>
-      <button id="btnToggleMode">Rotate Joints (FK)</button>
+      <label>Active:</label>
+      <select id="activeCharSelect"></select>
+      <button id="btnRemoveChar" class="danger">Remove</button>
     </div>
     <div class="control-group">
-      <label><input type="checkbox" id="chkConstraints" checked> Anti-Twist Guards</label>
+      <label>Target:</label>
+      <button id="btnControlTarget" class="accent">Joints Mode</button>
     </div>
     <div class="control-group">
-      <label for="jointWeightScale">Weight Inflate:</label>
-      <input type="range" id="jointWeightScale" min="0.5" max="2.5" step="0.05" value="1.0">
+      <label>Action:</label>
+      <button id="btnGizmoAction">Rotate (R)</button>
     </div>
     <div class="control-group">
+      <button id="btnFaceEachOther" title="Turn models to face one another directly">Face Selected</button>
+    </div>
+    <div class="control-group">
+      <label>Color:</label>
+      <input type="color" id="charSilhouetteColor" value="#111618">
+    </div>
+    <div class="control-group">
+      <label>Scale:</label>
+      <input type="range" id="charScaleSlider" min="0.2" max="2.5" step="0.05" value="1.0">
+    </div>
+    <div class="control-group">
+      <label>Align:</label>
+      <button id="btnAlignGround">Ground</button>
+      <button id="btnAlignX">Center X</button>
+      <button id="btnAlignZ">Center Z</button>
+    </div>
+    <div class="control-group">
+      <label><input type="checkbox" id="chkConstraints" checked> Anti-Twist</label>
       <label><input type="checkbox" id="chkLowPower" checked> Battery Saver</label>
-    </div>
-    <div class="control-group">
       <button id="btnResetPose">Reset Pose</button>
     </div>
   </div>
 
   <div id="panelLibrary" class="floating-panel">
-    <div class="panel-title">Saved Pose Library</div>
+    <div class="panel-title">Pose Library (Active Model)</div>
     <div class="control-group" style="justify-content: space-between;">
       <button id="btnSaveLocal" style="flex: 1;">Save Current</button>
       <button id="btnLoadSelected" class="accent">Load</button>
@@ -214,11 +239,11 @@
 <div id="modalJSON">
   <div class="panel-title">AI Pose Template & Exchange</div>
   <p style="font-size: 11px; opacity: 0.8;">
-    Copy this JSON to feed into AI, or paste an AI-generated pose below and click Apply:
+    Copy JSON to prompt AI for pose updates, or paste an AI pose and click Apply:
   </p>
   <textarea id="jsonArea" spellcheck="false"></textarea>
   <div class="modal-actions">
-    <button id="btnCopyPrompt">Copy AI Prompt + JSON</button>
+    <button id="btnCopyPrompt">Copy Prompt + JSON</button>
     <button id="btnApplyJSON" class="accent">Apply Pose</button>
     <button id="btnCloseModal">Close</button>
   </div>
@@ -231,6 +256,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const CARMILLA_URL = 'https://trancedemon-collab.github.io/my_apps/glb/carmilla.glb';
+const LEXA_URL = 'https://trancedemon-collab.github.io/my_apps/glb/Lexa_Drake.glb';
 
 const viewport = document.getElementById('viewport');
 const statusOverlay = document.getElementById('statusOverlay');
@@ -239,7 +265,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xd6d6d6);
 
 const camera = new THREE.PerspectiveCamera(45, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
-camera.position.set(0, 1.3, 2.8);
+camera.position.set(0, 1.3, 3.2);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: "low-power" });
 renderer.setSize(viewport.clientWidth, viewport.clientHeight);
@@ -268,7 +294,14 @@ function requestRender() { needsRender = true; }
 
 orbit.addEventListener('change', requestRender);
 
-// Environment Lighting & Grid
+let isTurntableActive = false;
+const btnTurntable = document.getElementById('btnTurntable');
+btnTurntable.addEventListener('click', () => {
+  isTurntableActive = !isTurntableActive;
+  btnTurntable.classList.toggle('accent', isTurntableActive);
+  requestRender();
+});
+
 const grid = new THREE.GridHelper(10, 20, 0x777777, 0xaaaaaa);
 grid.receiveShadow = true;
 scene.add(grid);
@@ -283,66 +316,16 @@ dirLight.shadow.mapSize.width = 1024;
 dirLight.shadow.mapSize.height = 1024;
 scene.add(dirLight);
 
-// Data structures
-const jointHandles = [];
-const originalMaterials = new Map();
-const initialBoneTransforms = new Map();
-const originalBoneInverses = new Map();
-const boneMap = new Map();
-const skinnedMeshes = [];
+const characters = [];
+let activeCharIndex = -1;
+let activeBone = null;
+let currentControlTarget = 'joint'; // 'joint' or 'global'
+let currentGizmoAction = 'rotate';   // 'rotate' or 'translate'
 const propsList = [];
+
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-let currentModelRoot = null;
-let activeBone = null;
-let currentGizmoMode = 'rotate';
-
-// Undo / Redo History
-const undoStack = [];
-const redoStack = [];
-const MAX_HISTORY = 30;
-
-function pushUndoState() {
-  undoStack.push(capturePoseData());
-  if (undoStack.length > MAX_HISTORY) undoStack.shift();
-  redoStack.length = 0;
-  updateUndoRedoUI();
-}
-
-function updateUndoRedoUI() {
-  document.getElementById('btnUndo').disabled = (undoStack.length === 0);
-  document.getElementById('btnRedo').disabled = (redoStack.length === 0);
-}
-
-document.getElementById('btnUndo').addEventListener('click', () => {
-  if (undoStack.length === 0) return;
-  redoStack.push(capturePoseData());
-  const state = undoStack.pop();
-  applyPoseData(state, false);
-  updateUndoRedoUI();
-});
-
-document.getElementById('btnRedo').addEventListener('click', () => {
-  if (redoStack.length === 0) return;
-  undoStack.push(capturePoseData());
-  const state = redoStack.pop();
-  applyPoseData(state, false);
-  updateUndoRedoUI();
-});
-
-window.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-    e.preventDefault();
-    document.getElementById('btnUndo').click();
-  } else if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z')) {
-    e.preventDefault();
-    document.getElementById('btnRedo').click();
-  }
-});
-
-// Shading Presets
-const silhouetteMat = new THREE.MeshBasicMaterial({ color: 0x111618 });
 const clayMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6 });
 const wireframeMat = new THREE.MeshBasicMaterial({ color: 0x111618, wireframe: true });
 
@@ -359,9 +342,7 @@ const cartoonMat = new THREE.MeshToonMaterial({
 });
 
 const sketchMat = new THREE.ShaderMaterial({
-  uniforms: {
-    uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.5).normalize() }
-  },
+  uniforms: { uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.5).normalize() } },
   vertexShader: `
     varying vec3 vNormal;
     varying vec2 vUv;
@@ -384,15 +365,12 @@ const sketchMat = new THREE.ShaderMaterial({
       if (intensity < 0.4) {
         if (mod(vUv.x - vUv.y, 2.0) > 1.0) pattern *= 0.4;
       }
-      if (intensity < 0.15) {
-        pattern = 0.1;
-      }
+      if (intensity < 0.15) pattern = 0.1;
       gl_FragColor = vec4(vec3(pattern), 1.0);
     }
   `
 });
 
-// Spherical Swing-Cone Clamping
 const CONE_LIMITS = {
   'Arm': 85 * (Math.PI / 180),
   'ForeArm': 140 * (Math.PI / 180),
@@ -404,15 +382,14 @@ const CONE_LIMITS = {
   'Spine': 30 * (Math.PI / 180)
 };
 
-function enforceBoneLimits(bone) {
-  const initial = initialBoneTransforms.get(bone);
+function enforceBoneLimits(bone, initialTransforms) {
+  const initial = initialTransforms.get(bone);
   if (!initial) return;
 
   for (const [key, maxAngle] of Object.entries(CONE_LIMITS)) {
     if (bone.name.includes(key)) {
       const dot = THREE.MathUtils.clamp(bone.quaternion.dot(initial.quaternion), -1, 1);
       const angle = 2 * Math.acos(Math.abs(dot));
-
       if (angle > maxAngle) {
         bone.quaternion.rotateTowards(initial.quaternion, angle - maxAngle);
       }
@@ -421,51 +398,231 @@ function enforceBoneLimits(bone) {
   }
 }
 
-function clearSceneModel() {
-  if (currentModelRoot) scene.remove(currentModelRoot);
-  currentModelRoot = null;
-  jointHandles.forEach(h => scene.remove(h));
-  jointHandles.length = 0;
-  originalMaterials.clear();
-  initialBoneTransforms.clear();
-  originalBoneInverses.clear();
-  boneMap.clear();
-  skinnedMeshes.length = 0;
-  transform.detach();
-  activeBone = null;
-  undoStack.length = 0;
-  redoStack.length = 0;
-  updateUndoRedoUI();
+function getActiveCharacter() {
+  return characters[activeCharIndex] || null;
 }
 
-function setupSkinnedMesh(gltf) {
-  clearSceneModel();
-  currentModelRoot = gltf.scene;
+function updateCharSelectUI() {
+  const select = document.getElementById('activeCharSelect');
+  select.innerHTML = '';
+  characters.forEach((char, idx) => {
+    const opt = document.createElement('option');
+    opt.value = idx;
+    opt.innerText = `${idx + 1}: ${char.name}`;
+    select.appendChild(opt);
+  });
+  if (activeCharIndex >= 0 && activeCharIndex < characters.length) {
+    select.value = activeCharIndex;
+    const char = characters[activeCharIndex];
+    document.getElementById('charSilhouetteColor').value = char.silhouetteColor;
+    document.getElementById('charScaleSlider').value = char.root.scale.x;
+  }
+  refreshPoseList();
+}
 
-  const box = new THREE.Box3().setFromObject(currentModelRoot);
-  const size = box.getSize(new THREE.Vector3());
+document.getElementById('activeCharSelect').addEventListener('change', (e) => {
+  activeCharIndex = parseInt(e.target.value, 10);
+  activeBone = null;
+  syncGizmoBinding();
+  updateCharSelectUI();
+  requestRender();
+});
+
+document.getElementById('btnRemoveChar').addEventListener('click', () => {
+  if (activeCharIndex < 0 || activeCharIndex >= characters.length) return;
+  const char = characters[activeCharIndex];
+  scene.remove(char.root);
+  char.jointHandles.forEach(h => scene.remove(h));
+  characters.splice(activeCharIndex, 1);
+  transform.detach();
+  activeBone = null;
+  activeCharIndex = characters.length - 1;
+  syncGizmoBinding();
+  updateCharSelectUI();
+  requestRender();
+});
+
+// Synchronize gizmo target (Whole Model vs Individual Joint)
+function syncGizmoBinding() {
+  const char = getActiveCharacter();
+  if (!char) {
+    transform.detach();
+    return;
+  }
+
+  if (currentControlTarget === 'global') {
+    transform.attach(char.root);
+    transform.setMode(currentGizmoAction);
+  } else {
+    if (activeBone) {
+      const isRoot = !activeBone.parent || !activeBone.parent.isBone;
+      if (currentGizmoAction === 'translate' && !isRoot) {
+        activeBone.getWorldPosition(ikTargetMesh.position);
+        transform.attach(ikTargetMesh);
+        transform.setMode('translate');
+      } else {
+        transform.attach(activeBone);
+        transform.setMode(isRoot ? 'translate' : currentGizmoAction);
+      }
+    } else {
+      transform.detach();
+    }
+  }
+}
+
+// Toggle Target: Joints Mode vs Entire Model Mode
+const btnControlTarget = document.getElementById('btnControlTarget');
+btnControlTarget.addEventListener('click', () => {
+  if (currentControlTarget === 'joint') {
+    currentControlTarget = 'global';
+    btnControlTarget.innerText = 'Entire Model';
+    btnControlTarget.classList.remove('accent');
+    btnControlTarget.classList.add('danger');
+  } else {
+    currentControlTarget = 'joint';
+    btnControlTarget.innerText = 'Joints Mode';
+    btnControlTarget.classList.remove('danger');
+    btnControlTarget.classList.add('accent');
+  }
+  syncGizmoBinding();
+  requestRender();
+});
+
+// Toggle Action: Rotate (R) vs Move (T)
+const btnGizmoAction = document.getElementById('btnGizmoAction');
+function setGizmoAction(mode) {
+  currentGizmoAction = mode;
+  btnGizmoAction.innerText = mode === 'rotate' ? 'Rotate (R)' : 'Move (T)';
+  syncGizmoBinding();
+  requestRender();
+}
+
+btnGizmoAction.addEventListener('click', () => {
+  setGizmoAction(currentGizmoAction === 'rotate' ? 'translate' : 'rotate');
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'r' || e.key === 'R') setGizmoAction('rotate');
+  if (e.key === 't' || e.key === 'T') setGizmoAction('translate');
+  if (e.key === 'g' || e.key === 'G') btnControlTarget.click();
+});
+
+// Make characters face one another
+document.getElementById('btnFaceEachOther').addEventListener('click', () => {
+  if (characters.length < 2) {
+    alert('Add at least two characters to use this feature.');
+    return;
+  }
+  const char = getActiveCharacter();
+  if (!char) return;
+
+  pushUndoState();
+  const otherIndex = (activeCharIndex === 0) ? 1 : 0;
+  const otherChar = characters[otherIndex];
+
+  const targetVec = new THREE.Vector3();
+  otherChar.root.getWorldPosition(targetVec);
+  targetVec.y = char.root.position.y; // Keep level horizontally
+
+  char.root.lookAt(targetVec);
+  char.root.updateMatrixWorld(true);
+  updateHandlesPositions();
+  requestRender();
+});
+
+// Scale maintaining rig/mesh synchronization
+document.getElementById('charScaleSlider').addEventListener('input', (e) => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  const s = parseFloat(e.target.value);
+  char.root.scale.set(s, s, s);
+  char.root.updateMatrixWorld(true);
+  updateHandlesPositions();
+  requestRender();
+});
+
+// Alignment Operations
+document.getElementById('btnAlignGround').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  pushUndoState();
+  const box = new THREE.Box3().setFromObject(char.root);
+  char.root.position.y -= box.min.y;
+  char.root.updateMatrixWorld(true);
+  updateHandlesPositions();
+  requestRender();
+});
+
+document.getElementById('btnAlignX').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  pushUndoState();
+  const box = new THREE.Box3().setFromObject(char.root);
   const center = box.getCenter(new THREE.Vector3());
-  orbit.target.set(center.x, center.y, center.z);
-  orbit.update();
+  char.root.position.x -= center.x;
+  char.root.updateMatrixWorld(true);
+  updateHandlesPositions();
+  requestRender();
+});
 
+document.getElementById('btnAlignZ').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  pushUndoState();
+  const box = new THREE.Box3().setFromObject(char.root);
+  const center = box.getCenter(new THREE.Vector3());
+  char.root.position.z -= center.z;
+  char.root.updateMatrixWorld(true);
+  updateHandlesPositions();
+  requestRender();
+});
+
+document.getElementById('charSilhouetteColor').addEventListener('input', (e) => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  char.silhouetteColor = e.target.value;
+  char.silhouetteMat.color.set(char.silhouetteColor);
+  requestRender();
+});
+
+// Loading Models
+const loader = new GLTFLoader();
+
+function addCharacterFromGLTF(gltf, name) {
+  const root = gltf.scene;
+  root.name = name;
+
+  if (characters.length > 0) {
+    root.position.x += (characters.length % 2 === 1 ? 1 : -1) * 0.75 * Math.ceil(characters.length / 2);
+  }
+
+  const charData = {
+    name: name,
+    root: root,
+    jointHandles: [],
+    originalMaterials: new Map(),
+    initialBoneTransforms: new Map(),
+    boneMap: new Map(),
+    skinnedMeshes: [],
+    silhouetteColor: characters.length === 0 ? "#111618" : "#8b1818",
+    silhouetteMat: new THREE.MeshBasicMaterial({ color: characters.length === 0 ? 0x111618 : 0x8b1818 })
+  };
+
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
   const handleRadius = Math.max(size.y * 0.014, 0.022);
 
-  currentModelRoot.traverse((child) => {
+  root.traverse((child) => {
     if (child.isMesh || child.isSkinnedMesh) {
       child.castShadow = true;
       child.receiveShadow = true;
-      originalMaterials.set(child, child.material);
-      skinnedMeshes.push(child);
-
-      if (child.isSkinnedMesh && child.skeleton) {
-        child.skeleton.boneInverses.forEach((inv, idx) => {
-          originalBoneInverses.set(`${child.uuid}_${idx}`, inv.clone());
-        });
-      }
+      charData.originalMaterials.set(child, child.material);
+      charData.skinnedMeshes.push(child);
     }
     if (child.isBone) {
-      boneMap.set(child.name, child);
-      initialBoneTransforms.set(child, {
+      charData.boneMap.set(child.name, child);
+      charData.initialBoneTransforms.set(child, {
         position: child.position.clone(),
         quaternion: child.quaternion.clone()
       });
@@ -476,261 +633,52 @@ function setupSkinnedMesh(gltf) {
       );
       handle.renderOrder = 999;
       handle.userData.bone = child;
+      handle.userData.charData = charData;
       scene.add(handle);
-      jointHandles.push(handle);
+      charData.jointHandles.push(handle);
     }
   });
 
-  scene.add(currentModelRoot);
+  scene.add(root);
+  characters.push(charData);
+  activeCharIndex = characters.length - 1;
+
   applyShadingStyle(document.getElementById('renderStyle').value);
+  updateCharSelectUI();
   updateHandlesPositions();
+  syncGizmoBinding();
   requestRender();
 }
 
-// Joint Weight Inflation
-document.getElementById('jointWeightScale').addEventListener('input', (e) => {
-  const factor = 1.0 / parseFloat(e.target.value);
-  skinnedMeshes.forEach(mesh => {
-    if (mesh.isSkinnedMesh && mesh.skeleton) {
-      mesh.skeleton.boneInverses.forEach((inv, idx) => {
-        const orig = originalBoneInverses.get(`${mesh.uuid}_${idx}`);
-        if (orig) {
-          inv.copy(orig);
-          inv.scale(new THREE.Vector3(factor, factor, factor));
-        }
-      });
-      mesh.skeleton.update();
-    }
-  });
-  requestRender();
-});
-
-// BIOMECHANICAL IK SOLVER: Pole-Vector Locked (No Helicopter Spinning)
-const _vA = new THREE.Vector3();
-const _vB = new THREE.Vector3();
-const _vC = new THREE.Vector3();
-const _vTarget = new THREE.Vector3();
-const _chestUp = new THREE.Vector3();
-const _mLook = new THREE.Matrix4();
-const _qTarget = new THREE.Quaternion();
-
-function solveLimbIK(endBone, targetWorldPos) {
-  const midBone = endBone.parent;
-  if (!midBone || !midBone.isBone) return;
-  const rootBone = midBone.parent;
-  if (!rootBone || !rootBone.isBone) return;
-
-  rootBone.getWorldPosition(_vA);
-  midBone.getWorldPosition(_vB);
-  endBone.getWorldPosition(_vC);
-  _vTarget.copy(targetWorldPos);
-
-  const l1 = _vA.distanceTo(_vB);
-  const l2 = _vB.distanceTo(_vC);
-  const maxReach = (l1 + l2) * 0.96; // 96% extension threshold
-  let dist = _vA.distanceTo(_vTarget);
-
-  // REALISTIC TENSION PULL: If pulling beyond arm reach, drag Hips/Body forward
-  if (dist > maxReach) {
-    const overflow = dist - maxReach;
-    const pullDir = _vTarget.clone().sub(_vA).normalize();
-    const hipBone = boneMap.get('Hips') || boneMap.get('mixamorigHips');
-    if (hipBone) {
-      hipBone.position.add(pullDir.clone().multiplyScalar(overflow * 0.75));
-      hipBone.updateMatrixWorld(true);
-      rootBone.getWorldPosition(_vA);
-      dist = _vA.distanceTo(_vTarget);
-    }
-  }
-
-  // Deadband: prevent pole-vector collapse
-  dist = THREE.MathUtils.clamp(dist, Math.abs(l1 - l2) * 1.05, maxReach);
-
-  // 1. STABLE SHOULDER AIM: Use Chest UP as locked reference to kill axial spinning
-  const chestBone = rootBone.parent;
-  if (chestBone && chestBone.isBone) {
-    _chestUp.set(0, 1, 0).applyQuaternion(chestBone.getWorldQuaternion(new THREE.Quaternion()));
-  } else {
-    _chestUp.set(0, 1, 0);
-  }
-
-  _mLook.lookAt(_vA, _vTarget, _chestUp);
-  _qTarget.setFromRotationMatrix(_mLook);
-
-  // Convert world aim quaternion into parent local bone space
-  if (rootBone.parent) {
-    const invParentQ = rootBone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
-    rootBone.quaternion.copy(invParentQ.multiply(_qTarget));
-  } else {
-    rootBone.quaternion.copy(_qTarget);
-  }
-
-  // 2. STABLE ELBOW/KNEE HINGE: Law of Cosines purely on local X-axis
-  const cosAngleMid = (l1 * l1 + l2 * l2 - dist * dist) / (2 * l1 * l2);
-  const angleMid = Math.acos(THREE.MathUtils.clamp(cosAngleMid, -1, 1));
-  const bendAngle = Math.PI - angleMid;
-
-  const isLeg = endBone.name.includes('Foot') || endBone.name.includes('Toe');
-  midBone.quaternion.setFromAxisAngle(new THREE.Vector3(isLeg ? -1 : 1, 0, 0), bendAngle);
-
-  if (document.getElementById('chkConstraints').checked) {
-    enforceBoneLimits(rootBone);
-    enforceBoneLimits(midBone);
-  }
-
-  rootBone.updateMatrixWorld(true);
-  midBone.updateMatrixWorld(true);
-  endBone.updateMatrixWorld(true);
-}
-
-// Drag Interaction
-let isTransforming = false;
-
-transform.addEventListener('dragging-changed', (e) => {
-  orbit.enabled = !e.value;
-  if (e.value) {
-    pushUndoState();
-    isTransforming = true;
-  } else {
-    isTransforming = false;
-    if (activeBone && currentGizmoMode === 'free') {
-      activeBone.getWorldPosition(ikTargetMesh.position);
-    }
-  }
-  requestRender();
-});
-
-transform.addEventListener('change', () => {
-  if (!activeBone || !isTransforming) return;
-
-  if (currentGizmoMode === 'free' && transform.getMode() === 'translate') {
-    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
-    if (isRoot) {
-      activeBone.position.copy(ikTargetMesh.position);
-    } else {
-      solveLimbIK(activeBone, ikTargetMesh.position);
-    }
-  } else if (currentGizmoMode === 'rotate') {
-    if (document.getElementById('chkConstraints').checked) {
-      enforceBoneLimits(activeBone);
-    }
-  }
-
-  if (currentModelRoot) {
-    currentModelRoot.traverse(c => {
-      if (c.isBone) c.updateMatrixWorld(true);
-    });
-  }
-  updateHandlesPositions();
-  requestRender();
-});
-
-function applyShadingStyle(style) {
-  skinnedMeshes.forEach(mesh => {
-    if (style === 'silhouette') mesh.material = silhouetteMat;
-    else if (style === 'clay') mesh.material = clayMat;
-    else if (style === 'cartoon') mesh.material = cartoonMat;
-    else if (style === 'sketch') mesh.material = sketchMat;
-    else if (style === 'wireframe') mesh.material = wireframeMat;
-    else mesh.material = originalMaterials.get(mesh) || mesh.material;
-  });
-  requestRender();
-}
-document.getElementById('renderStyle').addEventListener('change', (e) => applyShadingStyle(e.target.value));
-
-viewport.addEventListener('pointerdown', (e) => {
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-
-  const propHits = raycaster.intersectObjects(propsList, true);
-  if (propHits.length > 0) {
-    let topProp = propHits[0].object;
-    while (topProp.parent && topProp.parent !== scene) topProp = topProp.parent;
-    activeBone = null;
-    transform.attach(topProp);
-    transform.setMode('translate');
-    requestRender();
-    return;
-  }
-
-  const hits = raycaster.intersectObjects(jointHandles);
-  if (hits.length > 0) {
-    activeBone = hits[0].object.userData.bone;
-    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
-
-    if (currentGizmoMode === 'free') {
-      activeBone.getWorldPosition(ikTargetMesh.position);
-      transform.attach(ikTargetMesh);
-      transform.setMode('translate');
-    } else {
-      transform.attach(activeBone);
-      transform.setMode(isRoot ? 'translate' : 'rotate');
-    }
-    requestRender();
-  }
-});
-
-const btnToggleMode = document.getElementById('btnToggleMode');
-btnToggleMode.addEventListener('click', () => {
-  if (currentGizmoMode === 'rotate') {
-    currentGizmoMode = 'free';
-    btnToggleMode.innerText = 'Free Drag (IK)';
-  } else {
-    currentGizmoMode = 'rotate';
-    btnToggleMode.innerText = 'Rotate Joints (FK)';
-  }
-
-  if (activeBone) {
-    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
-    if (currentGizmoMode === 'free') {
-      activeBone.getWorldPosition(ikTargetMesh.position);
-      transform.attach(ikTargetMesh);
-      transform.setMode('translate');
-    } else {
-      transform.attach(activeBone);
-      transform.setMode(isRoot ? 'translate' : 'rotate');
-    }
-  }
-  requestRender();
-});
-
-document.getElementById('btnResetPose').addEventListener('click', () => {
-  pushUndoState();
-  initialBoneTransforms.forEach((val, bone) => {
-    bone.position.copy(val.position);
-    bone.quaternion.copy(val.quaternion);
-    bone.updateMatrixWorld(true);
-  });
-  transform.detach();
-  activeBone = null;
-  updateHandlesPositions();
-  requestRender();
-});
-
-const loader = new GLTFLoader();
-
-function loadModelFromUrl(url) {
+function loadModelUrl(url, displayName) {
   statusOverlay.style.display = 'block';
-  statusOverlay.innerText = 'Loading model...';
+  statusOverlay.innerText = `Loading ${displayName}...`;
   loader.load(url, (gltf) => {
-    setupSkinnedMesh(gltf);
+    addCharacterFromGLTF(gltf, displayName);
     statusOverlay.style.display = 'none';
   }, undefined, () => {
     statusOverlay.innerText = 'Failed to load asset.';
     setTimeout(() => statusOverlay.style.display = 'none', 3000);
   });
 }
-document.getElementById('btnLoadCarmilla').addEventListener('click', () => loadModelFromUrl(CARMILLA_URL));
 
-document.getElementById('fileInputModel').addEventListener('change', (e) => {
+document.getElementById('btnAddCarmilla').addEventListener('click', () => loadModelUrl(CARMILLA_URL, 'Carmilla'));
+document.getElementById('btnAddLexa').addEventListener('click', () => loadModelUrl(LEXA_URL, 'Lexa Drake'));
+
+document.getElementById('btnAddUrl').addEventListener('click', () => {
+  const url = prompt('Enter GLB URL:');
+  if (url && url.trim()) {
+    const filename = url.split('/').pop().split('?')[0] || 'Character';
+    loadModelUrl(url.trim(), filename);
+  }
+});
+
+document.getElementById('fileInputRig').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (evt) => {
-    loader.parse(evt.target.result, '', (gltf) => setupSkinnedMesh(gltf));
+    loader.parse(evt.target.result, '', (gltf) => addCharacterFromGLTF(gltf, file.name.replace('.glb', '')));
   };
   reader.readAsArrayBuffer(file);
 });
@@ -753,9 +701,219 @@ document.getElementById('fileInputProp').addEventListener('change', (e) => {
   reader.readAsArrayBuffer(file);
 });
 
-function capturePoseData() {
-  const pose = { format: "pose_3d_v1", bones: {} };
-  initialBoneTransforms.forEach((_, bone) => {
+// IK Solver
+const _vA = new THREE.Vector3();
+const _vB = new THREE.Vector3();
+const _vC = new THREE.Vector3();
+const _vTarget = new THREE.Vector3();
+const _chestUp = new THREE.Vector3();
+const _mLook = new THREE.Matrix4();
+const _qTarget = new THREE.Quaternion();
+
+function solveLimbIK(endBone, targetWorldPos, char) {
+  const midBone = endBone.parent;
+  if (!midBone || !midBone.isBone) return;
+  const rootBone = midBone.parent;
+  if (!rootBone || !rootBone.isBone) return;
+
+  rootBone.getWorldPosition(_vA);
+  midBone.getWorldPosition(_vB);
+  endBone.getWorldPosition(_vC);
+  _vTarget.copy(targetWorldPos);
+
+  const l1 = _vA.distanceTo(_vB);
+  const l2 = _vB.distanceTo(_vC);
+  const maxReach = (l1 + l2) * 0.96;
+  let dist = _vA.distanceTo(_vTarget);
+
+  if (dist > maxReach) {
+    const overflow = dist - maxReach;
+    const pullDir = _vTarget.clone().sub(_vA).normalize();
+    const hipBone = char.boneMap.get('Hips') || char.boneMap.get('mixamorigHips');
+    if (hipBone) {
+      hipBone.position.add(pullDir.clone().multiplyScalar(overflow * 0.75));
+      hipBone.updateMatrixWorld(true);
+      rootBone.getWorldPosition(_vA);
+      dist = _vA.distanceTo(_vTarget);
+    }
+  }
+
+  dist = THREE.MathUtils.clamp(dist, Math.abs(l1 - l2) * 1.05, maxReach);
+
+  const chestBone = rootBone.parent;
+  if (chestBone && chestBone.isBone) {
+    _chestUp.set(0, 1, 0).applyQuaternion(chestBone.getWorldQuaternion(new THREE.Quaternion()));
+  } else {
+    _chestUp.set(0, 1, 0);
+  }
+
+  _mLook.lookAt(_vA, _vTarget, _chestUp);
+  _qTarget.setFromRotationMatrix(_mLook);
+
+  if (rootBone.parent) {
+    const invParentQ = rootBone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    rootBone.quaternion.copy(invParentQ.multiply(_qTarget));
+  } else {
+    rootBone.quaternion.copy(_qTarget);
+  }
+
+  const cosAngleMid = (l1 * l1 + l2 * l2 - dist * dist) / (2 * l1 * l2);
+  const angleMid = Math.acos(THREE.MathUtils.clamp(cosAngleMid, -1, 1));
+  const bendAngle = Math.PI - angleMid;
+
+  const isLeg = endBone.name.includes('Foot') || endBone.name.includes('Toe');
+  midBone.quaternion.setFromAxisAngle(new THREE.Vector3(isLeg ? -1 : 1, 0, 0), bendAngle);
+
+  if (document.getElementById('chkConstraints').checked) {
+    enforceBoneLimits(rootBone, char.initialBoneTransforms);
+    enforceBoneLimits(midBone, char.initialBoneTransforms);
+  }
+
+  rootBone.updateMatrixWorld(true);
+  midBone.updateMatrixWorld(true);
+  endBone.updateMatrixWorld(true);
+}
+
+// Raycasting Click Handling
+viewport.addEventListener('pointerdown', (e) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  const propHits = raycaster.intersectObjects(propsList, true);
+  if (propHits.length > 0) {
+    let topProp = propHits[0].object;
+    while (topProp.parent && topProp.parent !== scene) topProp = topProp.parent;
+    activeBone = null;
+    transform.attach(topProp);
+    transform.setMode('translate');
+    requestRender();
+    return;
+  }
+
+  const allHandles = characters.flatMap(c => c.jointHandles);
+  const hits = raycaster.intersectObjects(allHandles);
+
+  if (hits.length > 0) {
+    const handleObj = hits[0].object;
+    activeBone = handleObj.userData.bone;
+    const char = handleObj.userData.charData;
+    activeCharIndex = characters.indexOf(char);
+    updateCharSelectUI();
+
+    // If in global mode, clicking a bone focuses that character's whole body
+    if (currentControlTarget === 'global') {
+      transform.attach(char.root);
+      transform.setMode(currentGizmoAction);
+    } else {
+      syncGizmoBinding();
+    }
+    requestRender();
+  }
+});
+
+let isTransforming = false;
+
+transform.addEventListener('dragging-changed', (e) => {
+  orbit.enabled = !e.value;
+  if (e.value) {
+    pushUndoState();
+    isTransforming = true;
+  } else {
+    isTransforming = false;
+    if (activeBone && currentControlTarget === 'joint' && currentGizmoAction === 'translate') {
+      activeBone.getWorldPosition(ikTargetMesh.position);
+    }
+  }
+  requestRender();
+});
+
+transform.addEventListener('change', () => {
+  if (!isTransforming) return;
+  const char = getActiveCharacter();
+  if (!char) return;
+
+  if (currentControlTarget === 'global') {
+    char.root.updateMatrixWorld(true);
+  } else if (activeBone) {
+    const isRoot = !activeBone.parent || !activeBone.parent.isBone;
+    if (currentGizmoAction === 'translate') {
+      if (isRoot) {
+        activeBone.position.copy(ikTargetMesh.position);
+      } else {
+        solveLimbIK(activeBone, ikTargetMesh.position, char);
+      }
+    } else if (currentGizmoAction === 'rotate') {
+      if (document.getElementById('chkConstraints').checked) {
+        enforceBoneLimits(activeBone, char.initialBoneTransforms);
+      }
+    }
+    char.root.traverse(c => {
+      if (c.isBone) c.updateMatrixWorld(true);
+    });
+  }
+
+  updateHandlesPositions();
+  requestRender();
+});
+
+// Undo / Redo
+const undoStack = [];
+const redoStack = [];
+const MAX_HISTORY = 30;
+
+function pushUndoState() {
+  const state = characters.map(c => captureCharPose(c));
+  undoStack.push(state);
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  updateUndoRedoUI();
+}
+
+function updateUndoRedoUI() {
+  document.getElementById('btnUndo').disabled = (undoStack.length === 0);
+  document.getElementById('btnRedo').disabled = (redoStack.length === 0);
+}
+
+document.getElementById('btnUndo').addEventListener('click', () => {
+  if (undoStack.length === 0) return;
+  redoStack.push(characters.map(c => captureCharPose(c)));
+  const state = undoStack.pop();
+  applyMultiCharState(state);
+  updateUndoRedoUI();
+});
+
+document.getElementById('btnRedo').addEventListener('click', () => {
+  if (redoStack.length === 0) return;
+  undoStack.push(characters.map(c => captureCharPose(c)));
+  const state = redoStack.pop();
+  applyMultiCharState(state);
+  updateUndoRedoUI();
+});
+
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('btnUndo').click();
+  } else if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z')) {
+    e.preventDefault();
+    document.getElementById('btnRedo').click();
+  }
+});
+
+// Pose Serialization
+function captureCharPose(char) {
+  const pose = {
+    format: "pose_3d_v1",
+    charName: char.name,
+    scale: char.root.scale.x,
+    position: [char.root.position.x, char.root.position.y, char.root.position.z],
+    rotation: [char.root.quaternion.x, char.root.quaternion.y, char.root.quaternion.z, char.root.quaternion.w],
+    bones: {}
+  };
+  char.initialBoneTransforms.forEach((_, bone) => {
     pose.bones[bone.name] = {
       p: [parseFloat(bone.position.x.toFixed(4)), parseFloat(bone.position.y.toFixed(4)), parseFloat(bone.position.z.toFixed(4))],
       q: [parseFloat(bone.quaternion.x.toFixed(4)), parseFloat(bone.quaternion.y.toFixed(4)), parseFloat(bone.quaternion.z.toFixed(4)), parseFloat(bone.quaternion.w.toFixed(4))]
@@ -764,33 +922,60 @@ function capturePoseData() {
   return pose;
 }
 
-function applyPoseData(poseObj, recordHistory = true) {
-  if (!poseObj || !poseObj.bones) return;
-  if (recordHistory) pushUndoState();
-
+function applyCharPose(char, poseObj) {
+  if (!char || !poseObj || !poseObj.bones) return;
+  if (poseObj.scale) {
+    char.root.scale.set(poseObj.scale, poseObj.scale, poseObj.scale);
+  }
+  if (poseObj.position) {
+    char.root.position.set(poseObj.position[0], poseObj.position[1], poseObj.position[2]);
+  }
+  if (poseObj.rotation) {
+    char.root.quaternion.set(poseObj.rotation[0], poseObj.rotation[1], poseObj.rotation[2], poseObj.rotation[3]);
+  }
   for (const [name, b] of Object.entries(poseObj.bones)) {
-    const bone = boneMap.get(name);
+    const bone = char.boneMap.get(name);
     if (bone) {
       bone.position.set(b.p[0], b.p[1], b.p[2]);
       bone.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
       bone.updateMatrixWorld(true);
     }
   }
-  if (currentModelRoot) {
-    currentModelRoot.traverse(c => {
-      if (c.isBone) c.updateMatrixWorld(true);
-      if (c.isSkinnedMesh && c.skeleton) c.skeleton.update();
-    });
-  }
+  char.root.traverse(c => {
+    if (c.isBone) c.updateMatrixWorld(true);
+    if (c.isSkinnedMesh && c.skeleton) c.skeleton.update();
+  });
+}
+
+function applyMultiCharState(stateArr) {
+  stateArr.forEach((poseObj, idx) => {
+    if (characters[idx]) applyCharPose(characters[idx], poseObj);
+  });
   updateHandlesPositions();
   requestRender();
 }
 
+document.getElementById('btnResetPose').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  pushUndoState();
+  char.initialBoneTransforms.forEach((val, bone) => {
+    bone.position.copy(val.position);
+    bone.quaternion.copy(val.quaternion);
+    bone.updateMatrixWorld(true);
+  });
+  transform.detach();
+  activeBone = null;
+  updateHandlesPositions();
+  requestRender();
+});
+
+// Library Management
 const poseList = document.getElementById('poseList');
 
 function refreshPoseList() {
   poseList.innerHTML = '';
-  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
+  const library = JSON.parse(localStorage.getItem('3d_pose_library_v2') || '{}');
   Object.keys(library).forEach(name => {
     const opt = document.createElement('option');
     opt.value = name;
@@ -801,9 +986,15 @@ function refreshPoseList() {
 refreshPoseList();
 
 function loadCurrentSelection() {
-  if (!poseList.value) return;
-  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
-  if (library[poseList.value]) applyPoseData(library[poseList.value]);
+  const char = getActiveCharacter();
+  if (!char || !poseList.value) return;
+  const library = JSON.parse(localStorage.getItem('3d_pose_library_v2') || '{}');
+  if (library[poseList.value]) {
+    pushUndoState();
+    applyCharPose(char, library[poseList.value]);
+    updateHandlesPositions();
+    requestRender();
+  }
 }
 
 poseList.addEventListener('change', loadCurrentSelection);
@@ -811,91 +1002,119 @@ poseList.addEventListener('click', loadCurrentSelection);
 document.getElementById('btnLoadSelected').addEventListener('click', loadCurrentSelection);
 
 document.getElementById('btnSaveLocal').addEventListener('click', () => {
-  const name = prompt('Name this pose:', `Pose ${new Date().toLocaleTimeString()}`);
+  const char = getActiveCharacter();
+  if (!char) return;
+  const name = prompt(`Name pose for ${char.name}:`, `${char.name} ${new Date().toLocaleTimeString()}`);
   if (!name) return;
-  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
-  library[name] = capturePoseData();
-  localStorage.setItem('3d_pose_library', JSON.stringify(library));
+  const library = JSON.parse(localStorage.getItem('3d_pose_library_v2') || '{}');
+  library[name] = captureCharPose(char);
+  localStorage.setItem('3d_pose_library_v2', JSON.stringify(library));
   refreshPoseList();
   poseList.value = name;
 });
 
 document.getElementById('btnDeletePose').addEventListener('click', () => {
   if (!poseList.value) return;
-  const library = JSON.parse(localStorage.getItem('3d_pose_library') || '{}');
+  const library = JSON.parse(localStorage.getItem('3d_pose_library_v2') || '{}');
   delete library[poseList.value];
-  localStorage.setItem('3d_pose_library', JSON.stringify(library));
+  localStorage.setItem('3d_pose_library_v2', JSON.stringify(library));
   refreshPoseList();
 });
 
 document.getElementById('btnExportFile').addEventListener('click', () => {
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(capturePoseData(), null, 2));
+  const char = getActiveCharacter();
+  if (!char) return;
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(captureCharPose(char), null, 2));
   const dlAnchor = document.createElement('a');
   dlAnchor.setAttribute("href", dataStr);
-  dlAnchor.setAttribute("download", `pose-${Date.now()}.json`);
+  dlAnchor.setAttribute("download", `${char.name}-pose-${Date.now()}.json`);
   dlAnchor.click();
 });
 
 document.getElementById('fileInputJSON').addEventListener('change', (e) => {
+  const char = getActiveCharacter();
   const file = e.target.files[0];
-  if (!file) return;
+  if (!file || !char) return;
   const reader = new FileReader();
   reader.onload = (evt) => {
     try {
       const parsed = JSON.parse(evt.target.result);
-      applyPoseData(parsed);
+      pushUndoState();
+      applyCharPose(char, parsed);
+      updateHandlesPositions();
+      requestRender();
     } catch (err) { alert('Invalid JSON file.'); }
   };
   reader.readAsText(file);
 });
 
+// AI Modal
 const modalJSON = document.getElementById('modalJSON');
 const jsonArea = document.getElementById('jsonArea');
 
 document.getElementById('btnJSONModal').addEventListener('click', () => {
-  jsonArea.value = JSON.stringify(capturePoseData(), null, 2);
+  const char = getActiveCharacter();
+  if (!char) return;
+  jsonArea.value = JSON.stringify(captureCharPose(char), null, 2);
   modalJSON.style.display = 'flex';
 });
 document.getElementById('btnCloseModal').addEventListener('click', () => modalJSON.style.display = 'none');
 
 document.getElementById('btnApplyJSON').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
   try {
     const data = JSON.parse(jsonArea.value);
-    applyPoseData(data);
+    pushUndoState();
+    applyCharPose(char, data);
     modalJSON.style.display = 'none';
+    updateHandlesPositions();
+    requestRender();
   } catch (e) { alert('Invalid JSON syntax.'); }
 });
 
 document.getElementById('btnCopyPrompt').addEventListener('click', () => {
-  const promptText = `I have a 3D humanoid model (Carmilla) rigged with standard Mixamo bone naming conventions. Here is the rest pose JSON format:\n\n\`\`\`json\n${jsonArea.value}\n\`\`\`\n\nPlease modify the "p" (position [x, y, z]) and "q" (quaternion [x, y, z, w]) values for the appropriate limbs to achieve the following pose: [DESCRIBE YOUR POSE HERE]. Return strictly the valid JSON.`;
-  navigator.clipboard.writeText(promptText).then(() => alert('AI Prompt + JSON template copied to clipboard!'));
+  const char = getActiveCharacter();
+  const promptText = `I have a 3D model (${char ? char.name : 'Humanoid'}) with Mixamo bone naming conventions. Here is the pose JSON:\n\n\`\`\`json\n${jsonArea.value}\n\`\`\`\n\nPlease modify the "p" (position [x, y, z]) and "q" (quaternion [x, y, z, w]) values for the appropriate limbs to achieve: [DESCRIBE POSE HERE]. Return strictly the valid JSON.`;
+  navigator.clipboard.writeText(promptText).then(() => alert('AI Prompt + JSON copied to clipboard!'));
 });
 
+// Shading Engine
+function applyShadingStyle(style) {
+  characters.forEach(char => {
+    char.skinnedMeshes.forEach(mesh => {
+      if (style === 'silhouette') mesh.material = char.silhouetteMat;
+      else if (style === 'clay') mesh.material = clayMat;
+      else if (style === 'cartoon') mesh.material = cartoonMat;
+      else if (style === 'sketch') mesh.material = sketchMat;
+      else if (style === 'wireframe') mesh.material = wireframeMat;
+      else mesh.material = char.originalMaterials.get(mesh) || mesh.material;
+    });
+  });
+  requestRender();
+}
+document.getElementById('renderStyle').addEventListener('change', (e) => applyShadingStyle(e.target.value));
+
+// Export Images
 function renderClean(callback) {
   const prevGrid = grid.visible;
   grid.visible = false;
   transform.detach();
-  jointHandles.forEach(h => h.visible = false);
+  characters.forEach(c => c.jointHandles.forEach(h => h.visible = false));
 
   renderer.render(scene, camera);
   callback(renderer.domElement);
 
   grid.visible = prevGrid;
-  jointHandles.forEach(h => h.visible = true);
-  if (activeBone) {
-    if (currentGizmoMode === 'free') {
-      transform.attach(ikTargetMesh);
-    } else {
-      transform.attach(activeBone);
-    }
-  }
+  characters.forEach(c => c.jointHandles.forEach(h => h.visible = true));
+  syncGizmoBinding();
   requestRender();
 }
 
 document.getElementById('btnExport').addEventListener('click', () => {
   renderClean((canvasElem) => {
     const link = document.createElement('a');
-    link.download = `carmilla-pose-${Date.now()}.jpg`;
+    link.download = `scene-pose-${Date.now()}.jpg`;
     link.href = canvasElem.toDataURL('image/jpeg', 0.95);
     link.click();
   });
@@ -913,13 +1132,25 @@ document.getElementById('btnCopy').addEventListener('click', () => {
 });
 
 function updateHandlesPositions() {
-  jointHandles.forEach(h => h.userData.bone.getWorldPosition(h.position));
+  characters.forEach(char => {
+    char.jointHandles.forEach(h => h.userData.bone.getWorldPosition(h.position));
+  });
 }
 
 const chkLowPower = document.getElementById('chkLowPower');
 
 function animate() {
   requestAnimationFrame(animate);
+
+  if (isTurntableActive) {
+    orbit.autoRotate = true;
+    orbit.autoRotateSpeed = 2.0;
+    orbit.update();
+    needsRender = true;
+  } else {
+    orbit.autoRotate = false;
+  }
+
   if (needsRender || !chkLowPower.checked) {
     updateHandlesPositions();
     renderer.render(scene, camera);
@@ -935,7 +1166,7 @@ window.addEventListener('resize', () => {
   requestRender();
 });
 
-loadModelFromUrl(CARMILLA_URL);
+loadModelUrl(CARMILLA_URL, 'Carmilla');
 </script>
 </body>
 </html>
