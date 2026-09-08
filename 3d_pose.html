@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Multi-Character Pose Studio</title>
+<title>3D Multi-Character Pose & Animation Studio</title>
 <style>
   :root {
     --bg-base: #242424;
@@ -16,6 +16,7 @@
     --accent-hover: #1c71d8;
     --danger: #e01b24;
     --setpose-color: #ff9500;
+    --timeline-bg: #1a1a1a;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
   body {
@@ -38,44 +39,46 @@
     z-index: 10;
   }
   .header-group { display: flex; align-items: center; gap: 6px; }
-  button, label.file-btn, select, input[type="text"] {
+  button, label.file-btn, select, input[type="text"], input[type="number"] {
     background: var(--btn-bg);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 5px 9px;
     font-size: 11px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 4px;
   }
-  input[type="text"] { cursor: text; }
+  input[type="text"], input[type="number"] { cursor: text; }
   button:hover, label.file-btn:hover, select:hover { background: var(--btn-hover); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.accent { background: var(--accent); color: #fff; border-color: rgba(0,0,0,0.2); }
   button.accent:hover { background: var(--accent-hover); }
   button.danger { background: var(--danger); color: #fff; }
+  button.active { background: #2ec27e; color: #fff; }
   button.setpose-active { background: var(--setpose-color); color: #fff; border-color: rgba(0,0,0,0.2); font-weight: 600; }
+  
   #viewport { flex: 1; position: relative; }
-  #fileInputRig, #fileInputProp, #fileInputJSON { display: none; }
-
+  #fileInputRig, #fileInputProp, #fileInputJSON, #fileInputAnimJSON, #fileInputAnimGLB { display: none; }
+  
   #statusOverlay {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(25, 25, 25, 0.9);
-    padding: 14px 24px;
+    background: rgba(25, 25, 25, 0.95);
+    padding: 16px 28px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     font-size: 13px;
     pointer-events: none;
     display: none;
-    z-index: 30;
+    z-index: 100;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
   }
-
-  /* 2D Arc Overlay for SetPose manipulation */
   #arcCanvas {
     position: absolute;
     top: 0;
@@ -85,11 +88,10 @@
     pointer-events: none;
     z-index: 5;
   }
-
   .floating-panel {
     position: absolute;
-    background: rgba(30, 30, 30, 0.88);
-    backdrop-filter: blur(6px);
+    background: rgba(30, 30, 30, 0.92);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 8px 12px;
@@ -97,19 +99,27 @@
     z-index: 15;
     box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   }
+  
+  /* Relocated control panel to bottom-left corner with tucked dual rows */
   #panelControls {
-    bottom: 16px;
-    left: 16px;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 540px;
+  }
+  .panel-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    max-width: 88vw;
+    gap: 6px;
   }
+
   #panelLibrary {
     top: 56px;
     right: 16px;
-    width: 250px;
+    width: 240px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -117,8 +127,53 @@
   .panel-title { font-weight: 600; font-size: 11px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color); }
   .control-group { display: flex; align-items: center; gap: 6px; }
   .control-group label { opacity: 0.85; }
-  input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 70px; }
+  input[type="range"] { accent-color: var(--accent); cursor: pointer; }
   input[type="color"] { border: none; width: 24px; height: 22px; padding: 0; background: transparent; cursor: pointer; }
+
+  /* Timeline Bottom Panel */
+  #timelinePanel {
+    height: 108px;
+    background: var(--timeline-bg);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    padding: 8px 16px;
+    gap: 8px;
+    z-index: 20;
+  }
+  .timeline-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+    width: 100%;
+  }
+  #timelineSlider {
+    flex: 1;
+    height: 6px;
+  }
+  #keyframeMarkers {
+    position: absolute;
+    left: 0;
+    right: 130px;
+    top: -6px;
+    height: 6px;
+    pointer-events: none;
+  }
+  .kf-tick {
+    position: absolute;
+    width: 3px;
+    height: 8px;
+    background: var(--setpose-color);
+    border-radius: 1px;
+    transform: translateX(-50%);
+  }
+  .timeline-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
 
   #modalJSON {
     position: absolute;
@@ -152,6 +207,9 @@
   }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <script type="importmap">
 {
   "imports": {
@@ -175,7 +233,6 @@
     <label class="file-btn" for="fileInputProp">+ Prop</label>
     <input type="file" id="fileInputProp" accept=".glb,.gltf">
   </div>
-
   <div class="header-group">
     <select id="renderStyle">
       <option value="silhouette">Silhouette</option>
@@ -185,53 +242,59 @@
       <option value="wireframe">3D Wireframe</option>
       <option value="clay">Clay Model</option>
     </select>
-    <button id="btnTurntable">360° View</button>
     <button id="btnJSONModal">AI / JSON Pose</button>
     <button id="btnCopy">Copy Image</button>
-    <button id="btnExport" class="accent">Export JPEG</button>
+    <button id="btnExport" class="accent">Export Still</button>
   </div>
 </header>
 
 <div id="viewport">
-  <div id="statusOverlay">Loading model...</div>
+  <div id="statusOverlay">Processing...</div>
   <canvas id="arcCanvas"></canvas>
 
+  <!-- Relocated to Bottom-Left Corner -->
   <div id="panelControls" class="floating-panel">
-    <div class="control-group">
-      <label>Active:</label>
-      <select id="activeCharSelect"></select>
-      <button id="btnRemoveChar" class="danger">Remove</button>
+    <div class="panel-row">
+      <div class="control-group">
+        <label>Active:</label>
+        <select id="activeCharSelect"></select>
+        <button id="btnRemoveChar" class="danger">Remove</button>
+      </div>
+      <div class="control-group">
+        <label>Control:</label>
+        <button id="btnControlSystem" class="setpose-active">SetPose (Arcball)</button>
+      </div>
+      <div class="control-group" id="gizmoSubControls" style="display: none;">
+        <button id="btnControlTarget">Joints Mode</button>
+        <button id="btnGizmoAction">Rotate (R)</button>
+      </div>
+      <div class="control-group">
+        <button id="btnFaceEachOther" title="Turn models to face one another">Face Selected</button>
+      </div>
+      <div class="control-group">
+        <button id="btnResetPose">Reset Pose</button>
+      </div>
     </div>
-    <!-- Interaction Preset Toggle -->
-    <div class="control-group">
-      <label>Control:</label>
-      <button id="btnControlSystem" class="setpose-active">SetPose (Arcball)</button>
-    </div>
-    <div class="control-group" id="gizmoSubControls" style="display: none;">
-      <button id="btnControlTarget">Joints Mode</button>
-      <button id="btnGizmoAction">Rotate (R)</button>
-    </div>
-    <div class="control-group">
-      <button id="btnFaceEachOther" title="Turn models to face one another directly">Face Selected</button>
-    </div>
-    <div class="control-group">
-      <label>Color:</label>
-      <input type="color" id="charSilhouetteColor" value="#111618">
-    </div>
-    <div class="control-group">
-      <label>Scale:</label>
-      <input type="range" id="charScaleSlider" min="0.2" max="2.5" step="0.05" value="1.0">
-    </div>
-    <div class="control-group">
-      <label>Align:</label>
-      <button id="btnAlignGround">Ground</button>
-      <button id="btnAlignX">Center X</button>
-      <button id="btnAlignZ">Center Z</button>
-    </div>
-    <div class="control-group">
-      <label><input type="checkbox" id="chkConstraints" checked> Anti-Twist</label>
-      <label><input type="checkbox" id="chkLowPower" checked> Battery Saver</label>
-      <button id="btnResetPose">Reset Pose</button>
+
+    <div class="panel-row">
+      <div class="control-group">
+        <label>Color:</label>
+        <input type="color" id="charSilhouetteColor" value="#111618">
+      </div>
+      <div class="control-group">
+        <label>Scale:</label>
+        <input type="range" id="charScaleSlider" min="0.2" max="2.5" step="0.05" value="1.0" style="width: 60px;">
+      </div>
+      <div class="control-group">
+        <label>Align:</label>
+        <button id="btnAlignGround">Ground</button>
+        <button id="btnAlignX">X</button>
+        <button id="btnAlignZ">Z</button>
+      </div>
+      <div class="control-group">
+        <label><input type="checkbox" id="chkConstraints" checked> Anti-Twist</label>
+        <label><input type="checkbox" id="chkLowPower" checked> Eco</label>
+      </div>
     </div>
   </div>
 
@@ -242,11 +305,55 @@
       <button id="btnLoadSelected" class="accent">Load</button>
       <button id="btnDeletePose">Delete</button>
     </div>
-    <select id="poseList" size="4" style="width: 100%; height: 80px; background: var(--bg-base); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px;"></select>
+    <select id="poseList" size="3" style="width: 100%; height: 50px; background: var(--bg-base); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px;"></select>
     <div class="control-group" style="justify-content: space-between;">
       <button id="btnExportFile" style="flex: 1;">Export .JSON</button>
       <label class="file-btn" for="fileInputJSON" style="flex: 1; justify-content: center;">Import .JSON</label>
       <input type="file" id="fileInputJSON" accept=".json">
+    </div>
+  </div>
+</div>
+
+<!-- Timeline & Animation Suite -->
+<div id="timelinePanel">
+  <div class="timeline-bar-wrap">
+    <div id="keyframeMarkers"></div>
+    <input type="range" id="timelineSlider" min="0" max="60" value="0" step="1">
+    <span id="frameCounter" style="font-family: monospace; font-size: 11px; width: 110px; text-align: right;">Frame: 0 / 60</span>
+  </div>
+
+  <div class="timeline-controls">
+    <div class="header-group">
+      <button id="btnPlayAnim">▶ Play</button>
+      <button id="btnLoopAnim" class="active">🔁 Loop</button>
+      <button id="btnAddKeyframe" class="accent">◆ Set Key</button>
+      <button id="btnDeleteKeyframe" class="danger">◇ Del Key</button>
+      <button id="btnClearAnimation">Clear</button>
+
+      <!-- Import external animation files -->
+      <label class="file-btn" for="fileInputAnimGLB" title="Load an external GLB animation and transfer it to the active character">Transfer Anim GLB</label>
+      <input type="file" id="fileInputAnimGLB" accept=".glb,.gltf">
+
+      <label class="file-btn" for="fileInputAnimJSON" title="Import keyframes from animation JSON">Import Anim JSON</label>
+      <input type="file" id="fileInputAnimJSON" accept=".json">
+    </div>
+
+    <div class="header-group">
+      <label>FPS:</label>
+      <select id="animFps">
+        <option value="12">12</option>
+        <option value="24" selected>24</option>
+        <option value="30">30</option>
+        <option value="60">60</option>
+      </select>
+      <label>Frames:</label>
+      <input type="number" id="totalFramesInput" min="10" max="600" value="60" style="width: 50px;">
+      
+      <!-- Export Options -->
+      <button id="btnExportAnimJSON" title="Save keyframes as JSON">Save Anim JSON</button>
+      <button id="btnExportGLB" class="accent" title="Export current character + animation to a standard GLB file">Export Anim GLB</button>
+      <button id="btnExportSequence">ZIP (Images)</button>
+      <button id="btnExportVideo" class="accent">Export Video</button>
     </div>
   </div>
 </div>
@@ -269,6 +376,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const CARMILLA_URL = 'https://trancedemon-collab.github.io/my_apps/glb/carmilla.glb';
 const LEXA_URL = 'https://trancedemon-collab.github.io/my_apps/glb/Lexa_Drake.glb';
@@ -295,7 +403,6 @@ const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.target.set(0, 0.95, 0);
 orbit.update();
 
-// Classic Gizmo TransformControls
 const transform = new TransformControls(camera, renderer.domElement);
 transform.size = 0.65;
 transform.setMode('rotate');
@@ -311,8 +418,7 @@ let needsRender = true;
 function requestRender() { needsRender = true; }
 orbit.addEventListener('change', requestRender);
 
-// Control System Architecture: 'setpose' vs 'gizmo'
-let currentSystem = 'setpose'; // Default to SetPose mode
+let currentSystem = 'setpose';
 let currentControlTarget = 'joint';
 let currentGizmoAction = 'rotate';
 
@@ -337,7 +443,6 @@ btnControlSystem.addEventListener('click', () => {
   requestRender();
 });
 
-// Environment
 const grid = new THREE.GridHelper(10, 20, 0x777777, 0xaaaaaa);
 grid.receiveShadow = true;
 scene.add(grid);
@@ -356,14 +461,11 @@ const characters = [];
 let activeCharIndex = -1;
 let activeBone = null;
 const propsList = [];
-
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-// Shading Presets
 const clayMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6 });
 const wireframeMat = new THREE.MeshBasicMaterial({ color: 0x111618, wireframe: true });
-
 const cartoonMat = new THREE.MeshToonMaterial({
   color: 0xe0e0e0,
   gradientMap: (() => {
@@ -420,7 +522,6 @@ const CONE_LIMITS = {
 function enforceBoneLimits(bone, initialTransforms) {
   const initial = initialTransforms.get(bone);
   if (!initial) return;
-
   for (const [key, maxAngle] of Object.entries(CONE_LIMITS)) {
     if (bone.name.includes(key)) {
       const dot = THREE.MathUtils.clamp(bone.quaternion.dot(initial.quaternion), -1, 1);
@@ -453,6 +554,7 @@ function updateCharSelectUI() {
     document.getElementById('charScaleSlider').value = char.root.scale.x;
   }
   refreshPoseList();
+  renderTimelineKeyframeMarkers();
 }
 
 document.getElementById('activeCharSelect').addEventListener('change', (e) => {
@@ -476,7 +578,6 @@ document.getElementById('btnRemoveChar').addEventListener('click', () => {
   requestRender();
 });
 
-// Scale maintaining rig/mesh synchronization
 document.getElementById('charScaleSlider').addEventListener('input', (e) => {
   const char = getActiveCharacter();
   if (!char) return;
@@ -487,7 +588,6 @@ document.getElementById('charScaleSlider').addEventListener('input', (e) => {
   requestRender();
 });
 
-// Alignment Operations
 document.getElementById('btnAlignGround').addEventListener('click', () => {
   const char = getActiveCharacter();
   if (!char) return;
@@ -538,32 +638,26 @@ document.getElementById('btnFaceEachOther').addEventListener('click', () => {
   }
   const char = getActiveCharacter();
   if (!char) return;
-
   pushUndoState();
   const otherIndex = (activeCharIndex === 0) ? 1 : 0;
   const otherChar = characters[otherIndex];
-
   const targetVec = new THREE.Vector3();
   otherChar.root.getWorldPosition(targetVec);
   targetVec.y = char.root.position.y;
-
   char.root.lookAt(targetVec);
   char.root.updateMatrixWorld(true);
   updateHandlesPositions();
   requestRender();
 });
 
-// Loading Models
 const loader = new GLTFLoader();
 
 function addCharacterFromGLTF(gltf, name) {
   const root = gltf.scene;
   root.name = name;
-
   if (characters.length > 0) {
     root.position.x += (characters.length % 2 === 1 ? 1 : -1) * 0.75 * Math.ceil(characters.length / 2);
   }
-
   const charData = {
     name: name,
     root: root,
@@ -573,7 +667,8 @@ function addCharacterFromGLTF(gltf, name) {
     boneMap: new Map(),
     skinnedMeshes: [],
     silhouetteColor: characters.length === 0 ? "#111618" : "#8b1818",
-    silhouetteMat: new THREE.MeshBasicMaterial({ color: characters.length === 0 ? 0x111618 : 0x8b1818 })
+    silhouetteMat: new THREE.MeshBasicMaterial({ color: characters.length === 0 ? 0x111618 : 0x8b1818 }),
+    keyframes: new Map()
   };
 
   const box = new THREE.Box3().setFromObject(root);
@@ -593,7 +688,6 @@ function addCharacterFromGLTF(gltf, name) {
         position: child.position.clone(),
         quaternion: child.quaternion.clone()
       });
-
       const handle = new THREE.Mesh(
         new THREE.SphereGeometry(handleRadius, 12, 12),
         new THREE.MeshBasicMaterial({ color: 0x3584e4, wireframe: true, depthTest: false })
@@ -630,7 +724,6 @@ function loadModelUrl(url, displayName) {
 
 document.getElementById('btnAddCarmilla').addEventListener('click', () => loadModelUrl(CARMILLA_URL, 'Carmilla'));
 document.getElementById('btnAddLexa').addEventListener('click', () => loadModelUrl(LEXA_URL, 'Lexa Drake'));
-
 document.getElementById('btnAddUrl').addEventListener('click', () => {
   const url = prompt('Enter GLB URL:');
   if (url && url.trim()) {
@@ -667,9 +760,7 @@ document.getElementById('fileInputProp').addEventListener('change', (e) => {
   reader.readAsArrayBuffer(file);
 });
 
-// ==========================================
-// SETPOSE-STYLE ARCBALL ROTATION & DRAG ENGINE
-// ==========================================
+// SetPose Direct Drag
 let isSetPoseDragging = false;
 let setPoseBone = null;
 let setPoseChar = null;
@@ -693,21 +784,18 @@ function drawSetPoseOverlay() {
   const cy = boneScreenPos.y;
   const mx = currentDragPoint.x;
   const my = currentDragPoint.y;
-
   const dx = mx - cx;
   const dy = my - cy;
   const currentRadius = Math.hypot(dx, dy);
   const startAngle = Math.atan2(dragStartPoint.y - cy, dragStartPoint.x - cx);
   const endAngle = Math.atan2(dy, dx);
 
-  // Outer reference guide circle
   arcCtx.beginPath();
   arcCtx.arc(cx, cy, 60, 0, Math.PI * 2);
   arcCtx.strokeStyle = "rgba(255, 149, 0, 0.25)";
   arcCtx.lineWidth = 2;
   arcCtx.stroke();
 
-  // Angular deflection slice
   arcCtx.beginPath();
   arcCtx.moveTo(cx, cy);
   arcCtx.arc(cx, cy, Math.max(30, Math.min(currentRadius, 100)), startAngle, endAngle, false);
@@ -715,7 +803,6 @@ function drawSetPoseOverlay() {
   arcCtx.fillStyle = "rgba(255, 149, 0, 0.2)";
   arcCtx.fill();
 
-  // Active directional ray
   arcCtx.beginPath();
   arcCtx.moveTo(cx, cy);
   arcCtx.lineTo(mx, my);
@@ -723,7 +810,6 @@ function drawSetPoseOverlay() {
   arcCtx.lineWidth = 2.5;
   arcCtx.stroke();
 
-  // Pivot point dot
   arcCtx.beginPath();
   arcCtx.arc(cx, cy, 5, 0, Math.PI * 2);
   arcCtx.fillStyle = "#ffffff";
@@ -740,15 +826,12 @@ function resizeArcCanvas() {
 resizeArcCanvas();
 window.addEventListener('resize', resizeArcCanvas);
 
-// Viewport Mouse / Pointer Events
 viewport.addEventListener('pointerdown', (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
   raycaster.setFromCamera(mouse, camera);
 
-  // Check props
   const propHits = raycaster.intersectObjects(propsList, true);
   if (propHits.length > 0) {
     let topProp = propHits[0].object;
@@ -760,10 +843,8 @@ viewport.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  // Intersect handles across characters
   const allHandles = characters.flatMap(c => c.jointHandles);
   const hits = raycaster.intersectObjects(allHandles);
-
   if (hits.length > 0) {
     const handleObj = hits[0].object;
     activeBone = handleObj.userData.bone;
@@ -772,7 +853,6 @@ viewport.addEventListener('pointerdown', (e) => {
     updateCharSelectUI();
 
     if (currentSystem === 'setpose') {
-      // Initiate SetPose-style direct rotational drag
       isSetPoseDragging = true;
       setPoseBone = activeBone;
       setPoseChar = char;
@@ -780,18 +860,15 @@ viewport.addEventListener('pointerdown', (e) => {
       dragStartPoint.y = e.clientY - rect.top;
       currentDragPoint.x = dragStartPoint.x;
       currentDragPoint.y = dragStartPoint.y;
-
       initialBoneQuat.copy(setPoseBone.quaternion);
       setPoseBone.getWorldPosition(boneWorldPos);
       updateScreenCoords(boneWorldPos, boneScreenPos);
-
-      orbit.enabled = false; // Disable camera orbit while dragging joint
+      orbit.enabled = false;
       pushUndoState();
       drawSetPoseOverlay();
       requestRender();
       return;
     } else {
-      // Classic Gizmo path
       if (currentControlTarget === 'global') {
         transform.attach(char.root);
         transform.setMode(currentGizmoAction);
@@ -816,12 +893,9 @@ window.addEventListener('pointermove', (e) => {
     const rect = renderer.domElement.getBoundingClientRect();
     currentDragPoint.x = e.clientX - rect.left;
     currentDragPoint.y = e.clientY - rect.top;
-
     const deltaX = currentDragPoint.x - dragStartPoint.x;
     const deltaY = currentDragPoint.y - dragStartPoint.y;
 
-    // View-aligned screen space rotation:
-    // Dragging horizontally rotates around camera's Up vector; vertically rotates around camera's Right vector
     const rotSpeed = 0.008;
     const cameraUp = camera.up.clone().applyQuaternion(camera.quaternion);
     const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
@@ -830,16 +904,13 @@ window.addEventListener('pointermove', (e) => {
     const qPitch = new THREE.Quaternion().setFromAxisAngle(cameraRight, deltaY * rotSpeed);
     const qDeltaWorld = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
 
-    // Convert world delta into bone's parent local space
     const parentWorldQuat = setPoseBone.parent ? setPoseBone.parent.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
     const invParent = parentWorldQuat.clone().invert();
-
     const qDeltaLocal = new THREE.Quaternion()
       .copy(invParent)
       .multiply(qDeltaWorld)
       .multiply(parentWorldQuat);
 
-    // Apply to baseline
     setPoseBone.quaternion.copy(qDeltaLocal.multiply(initialBoneQuat));
 
     if (document.getElementById('chkConstraints').checked) {
@@ -866,7 +937,6 @@ window.addEventListener('pointerup', () => {
   }
 });
 
-// Classic Gizmo Mode bindings
 const btnControlTarget = document.getElementById('btnControlTarget');
 btnControlTarget.addEventListener('click', () => {
   currentControlTarget = (currentControlTarget === 'joint') ? 'global' : 'joint';
@@ -932,10 +1002,13 @@ window.addEventListener('keydown', (e) => {
   } else if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z')) {
     e.preventDefault();
     document.getElementById('btnRedo').click();
+  } else if (e.code === 'Space') {
+    e.preventDefault();
+    document.getElementById('btnPlayAnim').click();
   }
 });
 
-// Pose Serialization
+// Serialization
 function captureCharPose(char) {
   const pose = {
     format: "pose_3d_v1",
@@ -959,7 +1032,6 @@ function applyCharPose(char, poseObj) {
   if (poseObj.scale) char.root.scale.set(poseObj.scale, poseObj.scale, poseObj.scale);
   if (poseObj.position) char.root.position.set(poseObj.position[0], poseObj.position[1], poseObj.position[2]);
   if (poseObj.rotation) char.root.quaternion.set(poseObj.rotation[0], poseObj.rotation[1], poseObj.rotation[2], poseObj.rotation[3]);
-
   for (const [name, b] of Object.entries(poseObj.bones)) {
     const bone = char.boneMap.get(name);
     if (bone) {
@@ -997,9 +1069,8 @@ document.getElementById('btnResetPose').addEventListener('click', () => {
   requestRender();
 });
 
-// Library Management
+// Single-Pose Library
 const poseList = document.getElementById('poseList');
-
 function refreshPoseList() {
   poseList.innerHTML = '';
   const library = JSON.parse(localStorage.getItem('3d_pose_library_v2') || '{}');
@@ -1023,7 +1094,6 @@ function loadCurrentSelection() {
     requestRender();
   }
 }
-
 poseList.addEventListener('change', loadCurrentSelection);
 poseList.addEventListener('click', loadCurrentSelection);
 document.getElementById('btnLoadSelected').addEventListener('click', loadCurrentSelection);
@@ -1078,7 +1148,6 @@ document.getElementById('fileInputJSON').addEventListener('change', (e) => {
 // AI Modal
 const modalJSON = document.getElementById('modalJSON');
 const jsonArea = document.getElementById('jsonArea');
-
 document.getElementById('btnJSONModal').addEventListener('click', () => {
   const char = getActiveCharacter();
   if (!char) return;
@@ -1086,7 +1155,6 @@ document.getElementById('btnJSONModal').addEventListener('click', () => {
   modalJSON.style.display = 'flex';
 });
 document.getElementById('btnCloseModal').addEventListener('click', () => modalJSON.style.display = 'none');
-
 document.getElementById('btnApplyJSON').addEventListener('click', () => {
   const char = getActiveCharacter();
   if (!char) return;
@@ -1106,7 +1174,7 @@ document.getElementById('btnCopyPrompt').addEventListener('click', () => {
   navigator.clipboard.writeText(promptText).then(() => alert('AI Prompt + JSON copied to clipboard!'));
 });
 
-// Shading Engine
+// Shading
 function applyShadingStyle(style) {
   characters.forEach(char => {
     char.skinnedMeshes.forEach(mesh => {
@@ -1122,17 +1190,14 @@ function applyShadingStyle(style) {
 }
 document.getElementById('renderStyle').addEventListener('change', (e) => applyShadingStyle(e.target.value));
 
-// Export Clean Images
 function renderClean(callback) {
   const prevGrid = grid.visible;
   grid.visible = false;
   transform.detach();
   characters.forEach(c => c.jointHandles.forEach(h => h.visible = false));
   arcCtx.clearRect(0, 0, arcCanvas.width, arcCanvas.height);
-
   renderer.render(scene, camera);
   callback(renderer.domElement);
-
   grid.visible = prevGrid;
   characters.forEach(c => c.jointHandles.forEach(h => h.visible = true));
   requestRender();
@@ -1164,12 +1229,494 @@ function updateHandlesPositions() {
   });
 }
 
-const chkLowPower = document.getElementById('chkLowPower');
+// ==========================================
+// ANIMATION & TIMELINE SUITE
+// ==========================================
+let currentFrame = 0;
+let totalFrames = 60;
+let isPlaying = false;
+let isLooping = true;
+let animTimer = null;
 
+const timelineSlider = document.getElementById('timelineSlider');
+const frameCounter = document.getElementById('frameCounter');
+const totalFramesInput = document.getElementById('totalFramesInput');
+const btnPlayAnim = document.getElementById('btnPlayAnim');
+const btnLoopAnim = document.getElementById('btnLoopAnim');
+const keyframeMarkers = document.getElementById('keyframeMarkers');
+
+totalFramesInput.addEventListener('change', (e) => {
+  totalFrames = Math.max(10, parseInt(e.target.value, 10) || 60);
+  timelineSlider.max = totalFrames;
+  updateTimelineDisplay();
+  renderTimelineKeyframeMarkers();
+});
+
+timelineSlider.addEventListener('input', (e) => {
+  currentFrame = parseInt(e.target.value, 10);
+  applyAnimationPoseAtFrame(currentFrame);
+  updateTimelineDisplay();
+  requestRender();
+});
+
+btnPlayAnim.addEventListener('click', () => {
+  if (isPlaying) pausePlayback();
+  else startPlayback();
+});
+
+btnLoopAnim.addEventListener('click', () => {
+  isLooping = !isLooping;
+  btnLoopAnim.classList.toggle('active', isLooping);
+});
+
+function updateTimelineDisplay() {
+  timelineSlider.value = currentFrame;
+  frameCounter.innerText = `Frame: ${currentFrame} / ${totalFrames}`;
+}
+
+function startPlayback() {
+  isPlaying = true;
+  btnPlayAnim.innerText = '⏸ Pause';
+  btnPlayAnim.classList.add('accent');
+  transform.detach();
+
+  const fps = parseInt(document.getElementById('animFps').value, 10) || 24;
+  const interval = 1000 / fps;
+
+  animTimer = setInterval(() => {
+    currentFrame++;
+    if (currentFrame > totalFrames) {
+      if (isLooping) {
+        currentFrame = 0;
+      } else {
+        pausePlayback();
+        return;
+      }
+    }
+    applyAnimationPoseAtFrame(currentFrame);
+    updateTimelineDisplay();
+    requestRender();
+  }, interval);
+}
+
+function pausePlayback() {
+  isPlaying = false;
+  btnPlayAnim.innerText = '▶ Play';
+  btnPlayAnim.classList.remove('accent');
+  clearInterval(animTimer);
+  animTimer = null;
+}
+
+document.getElementById('animFps').addEventListener('change', () => {
+  if (isPlaying) {
+    pausePlayback();
+    startPlayback();
+  }
+});
+
+// Keyframing Engine
+document.getElementById('btnAddKeyframe').addEventListener('click', () => {
+  characters.forEach(char => {
+    char.keyframes.set(currentFrame, captureCharPose(char));
+  });
+  renderTimelineKeyframeMarkers();
+});
+
+document.getElementById('btnDeleteKeyframe').addEventListener('click', () => {
+  characters.forEach(char => {
+    char.keyframes.delete(currentFrame);
+  });
+  renderTimelineKeyframeMarkers();
+});
+
+document.getElementById('btnClearAnimation').addEventListener('click', () => {
+  if (!confirm('Clear all stored keyframes across characters?')) return;
+  characters.forEach(char => char.keyframes.clear());
+  renderTimelineKeyframeMarkers();
+});
+
+function renderTimelineKeyframeMarkers() {
+  keyframeMarkers.innerHTML = '';
+  const allFrameIndices = new Set();
+  characters.forEach(char => {
+    char.keyframes.forEach((_, f) => allFrameIndices.add(f));
+  });
+
+  allFrameIndices.forEach(f => {
+    const tick = document.createElement('div');
+    tick.className = 'kf-tick';
+    tick.style.left = `${(f / totalFrames) * 100}%`;
+    keyframeMarkers.appendChild(tick);
+  });
+}
+
+// SLERP Interpolator
+const tmpQ1 = new THREE.Quaternion();
+const tmpQ2 = new THREE.Quaternion();
+const tmpV1 = new THREE.Vector3();
+const tmpV2 = new THREE.Vector3();
+
+function applyAnimationPoseAtFrame(frame) {
+  characters.forEach(char => {
+    const keys = Array.from(char.keyframes.keys()).sort((a, b) => a - b);
+    if (keys.length === 0) return;
+
+    if (char.keyframes.has(frame)) {
+      applyCharPose(char, char.keyframes.get(frame));
+      return;
+    }
+
+    if (frame <= keys[0]) {
+      applyCharPose(char, char.keyframes.get(keys[0]));
+      return;
+    }
+    if (frame >= keys[keys.length - 1]) {
+      applyCharPose(char, char.keyframes.get(keys[keys.length - 1]));
+      return;
+    }
+
+    let prevKey = keys[0];
+    let nextKey = keys[keys.length - 1];
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (frame > keys[i] && frame < keys[i + 1]) {
+        prevKey = keys[i];
+        nextKey = keys[i + 1];
+        break;
+      }
+    }
+
+    const alpha = (frame - prevKey) / (nextKey - prevKey);
+    const poseA = char.keyframes.get(prevKey);
+    const poseB = char.keyframes.get(nextKey);
+
+    tmpV1.fromArray(poseA.position);
+    tmpV2.fromArray(poseB.position);
+    char.root.position.lerpVectors(tmpV1, tmpV2, alpha);
+
+    tmpQ1.fromArray(poseA.rotation);
+    tmpQ2.fromArray(poseB.rotation);
+    char.root.quaternion.copy(tmpQ1).slerp(tmpQ2, alpha);
+
+    for (const [name, bA] of Object.entries(poseA.bones)) {
+      const bB = poseB.bones[name];
+      const bone = char.boneMap.get(name);
+      if (bone && bB) {
+        tmpV1.fromArray(bA.p);
+        tmpV2.fromArray(bB.p);
+        bone.position.lerpVectors(tmpV1, tmpV2, alpha);
+
+        tmpQ1.fromArray(bA.q);
+        tmpQ2.fromArray(bB.q);
+        bone.quaternion.copy(tmpQ1).slerp(tmpQ2, alpha);
+      }
+    }
+
+    char.root.traverse(c => {
+      if (c.isBone) c.updateMatrixWorld(true);
+      if (c.isSkinnedMesh && c.skeleton) c.skeleton.update();
+    });
+  });
+
+  updateHandlesPositions();
+}
+
+// ==========================================
+// ANIMATION JSON EXPORT / IMPORT
+// ==========================================
+document.getElementById('btnExportAnimJSON').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
+  const animData = {
+    format: "anim_3d_v1",
+    charName: char.name,
+    totalFrames: totalFrames,
+    fps: parseInt(document.getElementById('animFps').value, 10) || 24,
+    keyframes: {}
+  };
+  char.keyframes.forEach((pose, frame) => {
+    animData.keyframes[frame] = pose;
+  });
+
+  const blob = new Blob([JSON.stringify(animData, null, 2)], { type: "application/json" });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${char.name}-animation-${Date.now()}.json`;
+  link.click();
+});
+
+document.getElementById('fileInputAnimJSON').addEventListener('change', (e) => {
+  const char = getActiveCharacter();
+  const file = e.target.files[0];
+  if (!file || !char) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const animData = JSON.parse(evt.target.result);
+      if (!animData.keyframes) throw new Error("Invalid format");
+      if (animData.totalFrames) {
+        totalFrames = animData.totalFrames;
+        totalFramesInput.value = totalFrames;
+        timelineSlider.max = totalFrames;
+      }
+      char.keyframes.clear();
+      for (const [frameStr, pose] of Object.entries(animData.keyframes)) {
+        char.keyframes.set(parseInt(frameStr, 10), pose);
+      }
+      renderTimelineKeyframeMarkers();
+      applyAnimationPoseAtFrame(currentFrame);
+      requestRender();
+      alert(`Imported animation for ${char.name}!`);
+    } catch (err) {
+      alert("Failed to parse animation JSON.");
+    }
+  };
+  reader.readAsText(file);
+});
+
+// ==========================================
+// ANIMATION RETARGETING (IMPORT DUMMY GLB)
+// ==========================================
+document.getElementById('fileInputAnimGLB').addEventListener('change', (e) => {
+  const char = getActiveCharacter();
+  const file = e.target.files[0];
+  if (!file || !char) return;
+
+  statusOverlay.style.display = 'block';
+  statusOverlay.innerText = 'Extracting external animation...';
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    loader.parse(evt.target.result, '', (gltf) => {
+      if (!gltf.animations || gltf.animations.length === 0) {
+        alert('No animation tracks found in this GLB file.');
+        statusOverlay.style.display = 'none';
+        return;
+      }
+
+      const clip = gltf.animations[0];
+      const fps = parseInt(document.getElementById('animFps').value, 10) || 24;
+      const calculatedFrames = Math.max(10, Math.ceil(clip.duration * fps));
+      
+      totalFrames = calculatedFrames;
+      totalFramesInput.value = totalFrames;
+      timelineSlider.max = totalFrames;
+
+      // Temp mixer for sampling
+      const tempMixer = new THREE.AnimationMixer(gltf.scene);
+      const action = tempMixer.clipAction(clip);
+      action.play();
+
+      // Build keyframe dictionary for current char
+      char.keyframes.clear();
+
+      for (let f = 0; f <= totalFrames; f++) {
+        const t = (f / totalFrames) * clip.duration;
+        tempMixer.setTime(t);
+        gltf.scene.updateMatrixWorld(true);
+
+        // Map matching bones by name
+        const samplePose = {
+          format: "pose_3d_v1",
+          charName: char.name,
+          scale: char.root.scale.x,
+          position: [char.root.position.x, char.root.position.y, char.root.position.z],
+          rotation: [char.root.quaternion.x, char.root.quaternion.y, char.root.quaternion.z, char.root.quaternion.w],
+          bones: {}
+        };
+
+        gltf.scene.traverse((sourceBone) => {
+          if (sourceBone.isBone) {
+            // Find corresponding bone in character
+            let targetBone = char.boneMap.get(sourceBone.name);
+            if (!targetBone) {
+              // Fuzzy prefix match (e.g., Mixamo rigs with prefixes like "mixamorig:")
+              const cleanName = sourceBone.name.split(':').pop();
+              for (const [bName, bObj] of char.boneMap.entries()) {
+                if (bName.endsWith(cleanName)) {
+                  targetBone = bObj;
+                  break;
+                }
+              }
+            }
+
+            if (targetBone) {
+              samplePose.bones[targetBone.name] = {
+                p: [sourceBone.position.x, sourceBone.position.y, sourceBone.position.z],
+                q: [sourceBone.quaternion.x, sourceBone.quaternion.y, sourceBone.quaternion.z, sourceBone.quaternion.w]
+              };
+            }
+          }
+        });
+
+        char.keyframes.set(f, samplePose);
+      }
+
+      renderTimelineKeyframeMarkers();
+      applyAnimationPoseAtFrame(0);
+      statusOverlay.style.display = 'none';
+      requestRender();
+      alert(`Inherited ${clip.name || 'Animation'} (${totalFrames} frames) successfully!`);
+    });
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// ==========================================
+// EXPORT ANIMATED GLB
+// ==========================================
+document.getElementById('btnExportGLB').addEventListener('click', () => {
+  const char = getActiveCharacter();
+  if (!char) return;
+
+  statusOverlay.style.display = 'block';
+  statusOverlay.innerText = 'Baking animation tracks and packaging GLB...';
+
+  const fps = parseInt(document.getElementById('animFps').value, 10) || 24;
+  const duration = totalFrames / fps;
+  const tracks = [];
+
+  // Generate bone tracks from keyframes
+  const times = [];
+  for (let f = 0; f <= totalFrames; f++) {
+    times.push(f / fps);
+  }
+
+  // Sample bone tracks
+  char.initialBoneTransforms.forEach((_, bone) => {
+    const qValues = [];
+    const pValues = [];
+
+    for (let f = 0; f <= totalFrames; f++) {
+      applyAnimationPoseAtFrame(f);
+      qValues.push(bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
+      pValues.push(bone.position.x, bone.position.y, bone.position.z);
+    }
+
+    tracks.push(new THREE.QuaternionKeyframeTrack(`${bone.name}.quaternion`, times, qValues));
+    tracks.push(new THREE.VectorKeyframeTrack(`${bone.name}.position`, times, pValues));
+  });
+
+  const animClip = new THREE.AnimationClip(`${char.name}_Action`, duration, tracks);
+
+  const exporter = new GLTFExporter();
+  exporter.parse(
+    char.root,
+    (gltfBuffer) => {
+      const blob = new Blob([gltfBuffer], { type: 'model/gltf-binary' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${char.name}-animated-${Date.now()}.glb`;
+      link.click();
+
+      statusOverlay.style.display = 'none';
+      applyAnimationPoseAtFrame(currentFrame);
+      requestRender();
+    },
+    (err) => {
+      alert('Error exporting GLB: ' + err);
+      statusOverlay.style.display = 'none';
+    },
+    { binary: true, animations: [animClip] }
+  );
+});
+
+// ==========================================
+// EXPORT PIPELINES (ZIP & VIDEO)
+// ==========================================
+document.getElementById('btnExportSequence').addEventListener('click', async () => {
+  pausePlayback();
+  statusOverlay.style.display = 'block';
+  statusOverlay.innerText = 'Compiling Image Sequence (.ZIP)...';
+
+  const zip = new JSZip();
+  const prevGrid = grid.visible;
+  grid.visible = false;
+  transform.detach();
+  characters.forEach(c => c.jointHandles.forEach(h => h.visible = false));
+  arcCtx.clearRect(0, 0, arcCanvas.width, arcCanvas.height);
+
+  for (let f = 0; f <= totalFrames; f++) {
+    statusOverlay.innerText = `Rendering frame ${f} / ${totalFrames}...`;
+    applyAnimationPoseAtFrame(f);
+    renderer.render(scene, camera);
+
+    const dataUrl = renderer.domElement.toDataURL('image/png');
+    const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+    const padFrame = String(f).padStart(4, '0');
+    zip.file(`frame_${padFrame}.png`, base64Data, { base64: true });
+    await new Promise(res => setTimeout(res, 8));
+  }
+
+  statusOverlay.innerText = 'Compressing archive...';
+  const content = await zip.generateAsync({ type: "blob" });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(content);
+  link.download = `animation-sequence-${Date.now()}.zip`;
+  link.click();
+
+  grid.visible = prevGrid;
+  characters.forEach(c => c.jointHandles.forEach(h => h.visible = true));
+  statusOverlay.style.display = 'none';
+  applyAnimationPoseAtFrame(currentFrame);
+  requestRender();
+});
+
+document.getElementById('btnExportVideo').addEventListener('click', async () => {
+  pausePlayback();
+  statusOverlay.style.display = 'block';
+  statusOverlay.innerText = 'Recording Video Buffer...';
+
+  const fps = parseInt(document.getElementById('animFps').value, 10) || 24;
+  const prevGrid = grid.visible;
+  grid.visible = false;
+  transform.detach();
+  characters.forEach(c => c.jointHandles.forEach(h => h.visible = false));
+  arcCtx.clearRect(0, 0, arcCanvas.width, arcCanvas.height);
+
+  const stream = renderer.domElement.captureStream(fps);
+  let mimeType = 'video/webm;codecs=vp9';
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    mimeType = 'video/webm';
+  }
+
+  const recorder = new MediaRecorder(stream, { mimeType: mimeType });
+  const chunks = [];
+
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: mimeType });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `animation-${Date.now()}.webm`;
+    link.click();
+
+    grid.visible = prevGrid;
+    characters.forEach(c => c.jointHandles.forEach(h => h.visible = true));
+    statusOverlay.style.display = 'none';
+    applyAnimationPoseAtFrame(currentFrame);
+    requestRender();
+  };
+
+  recorder.start();
+
+  const frameInterval = 1000 / fps;
+  for (let f = 0; f <= totalFrames; f++) {
+    statusOverlay.innerText = `Recording frame ${f} / ${totalFrames}...`;
+    applyAnimationPoseAtFrame(f);
+    renderer.render(scene, camera);
+    await new Promise(res => setTimeout(res, frameInterval));
+  }
+
+  recorder.stop();
+});
+
+const chkLowPower = document.getElementById('chkLowPower');
 function animate() {
   requestAnimationFrame(animate);
-
-  if (needsRender || !chkLowPower.checked) {
+  if (isPlaying || needsRender || !chkLowPower.checked) {
     updateHandlesPositions();
     renderer.render(scene, camera);
     needsRender = false;
@@ -1185,7 +1732,7 @@ window.addEventListener('resize', () => {
   requestRender();
 });
 
-// Boot Carmilla
+// Boot Default
 loadModelUrl(CARMILLA_URL, 'Carmilla');
 </script>
 </body>
