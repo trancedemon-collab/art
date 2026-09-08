@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Atelier Vector</title>
+  <style>
+    :root {
+      --bg: #242424;
+      --surface: #303030;
+      --border: #444444;
+      --text: #f0f0f0;
+      --accent: #3584e4;
+      --hover: #3d3d3d;
+      --active: #4a4a4a;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f4f4;
+        --surface: #ffffff;
+        --border: #dcdcdc;
+        --text: #222222;
+        --accent: #1c71d8;
+        --hover: #ececec;
+        --active: #dedede;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 48px;
+      padding: 0 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .app-title { font-weight: 700; font-size: 15px; letter-spacing: 0.5px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .btn-group {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    button, select {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      font-size: 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-group button { border: none; border-radius: 0; border-right: 1px solid var(--border); }
+    .btn-group button:last-child { border-right: none; }
+    button:hover, select:hover { background: var(--hover); }
+    button.active { background: var(--active); font-weight: 600; color: var(--accent); }
+
+    .control-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 85px; }
+    input[type="color"] {
+      -webkit-appearance: none;
+      border: 1px solid var(--border);
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      cursor: pointer;
+      background: none;
+      padding: 0;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+    .viewport {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      overflow: auto;
+      padding: 16px;
+    }
+
+    #svgCanvas {
+      background: #ffffff;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      border-radius: 4px;
+    }
+
+    /* Selected element bounding outline */
+    .stroke-group.selected .visible-stroke {
+      filter: drop-shadow(0 0 3px var(--accent));
+    }
+    .stroke-group.selected .hit-box {
+      stroke: var(--accent) !important;
+      stroke-opacity: 0.3 !important;
+      stroke-dasharray: 4 4;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="app-title">Atelier Vector</div>
+    <div style="display:flex; gap:6px;">
+      <button id="undoBtn" title="Ctrl+Z">Undo</button>
+      <button id="redoBtn" title="Ctrl+Y">Redo</button>
+      <button id="exportSvg">SVG</button>
+      <button id="exportPng">PNG</button>
+      <button id="exportJpg">JPEG</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="btn-group">
+      <button id="toolPen" class="active">Pen</button>
+      <button id="toolSelect">Select & Drag</button>
+      <button id="toolBucket">Bucket Fill</button>
+      <button id="toolEraser">Eraser</button>
+    </div>
+
+    <div class="control-item">
+      <label for="penStyle">Nib:</label>
+      <select id="penStyle">
+        <option value="calligraphy">Calligraphy (Chisel)</option>
+        <option value="graphite">Graphite Pencil</option>
+        <option value="fountain">Fountain Pen</option>
+        <option value="fineliner">Fine Liner</option>
+      </select>
+    </div>
+
+    <div class="control-item">
+      <label for="colorPicker">Color</label>
+      <input type="color" id="colorPicker" value="#222222">
+    </div>
+
+    <div class="control-item">
+      <label for="sizeSlider">Width</label>
+      <input type="range" id="sizeSlider" min="2" max="36" value="6">
+      <span id="sizeVal">6px</span>
+    </div>
+
+    <div class="control-item">
+      <label for="smoothSlider" title="Stabilizes mouse tremors and rounds sharp wobbles">Smoothness</label>
+      <input type="range" id="smoothSlider" min="0" max="100" value="60">
+      <span id="smoothVal">60%</span>
+    </div>
+
+    <div class="btn-group">
+      <button id="pageUpBtn" title="Move Above (PageUp)">Page Up</button>
+      <button id="pageDownBtn" title="Move Below (PageDown)">Page Down</button>
+      <button id="deleteBtn" title="Delete Stroke">Delete</button>
+    </div>
+
+    <button id="clearBtn" style="margin-left: auto;">Clear</button>
+  </div>
+
+  <div class="viewport">
+    <svg id="svgCanvas" width="1050" height="700" viewBox="0 0 1050 700" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="graphiteFilter" x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="3" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.5" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+      <g id="drawLayer"></g>
+    </svg>
+  </div>
+
+  <script>
+    const svg = document.getElementById('svgCanvas');
+    const drawLayer = document.getElementById('drawLayer');
+
+    // States
+    let activeTool = 'pen';
+    let penStyle = 'calligraphy';
+    let currentColor = '#222222';
+    let brushSize = 6;
+    let smoothLevel = 0.60;
+    let selectedGroup = null;
+
+    // History
+    const undoStack = [];
+    const redoStack = [];
+
+    function saveState() {
+      undoStack.push(drawLayer.innerHTML);
+      redoStack.length = 0;
+      if (undoStack.length > 40) undoStack.shift();
+    }
+
+    function undo() {
+      if (!undoStack.length) return;
+      deselect();
+      redoStack.push(drawLayer.innerHTML);
+      drawLayer.innerHTML = undoStack.pop();
+      rebindAll();
+    }
+
+    function redo() {
+      if (!redoStack.length) return;
+      deselect();
+      undoStack.push(drawLayer.innerHTML);
+      drawLayer.innerHTML = redoStack.pop();
+      rebindAll();
+    }
+
+    // UI Tools
+    const tools = {
+      pen: document.getElementById('toolPen'),
+      select: document.getElementById('toolSelect'),
+      bucket: document.getElementById('toolBucket'),
+      eraser: document.getElementById('toolEraser')
+    };
+
+    function setTool(t) {
+      activeTool = t;
+      deselect();
+      Object.keys(tools).forEach(k => tools[k].classList.toggle('active', k === t));
+      svg.style.cursor = t === 'pen' ? 'crosshair' : t === 'select' ? 'default' : t === 'bucket' ? 'cell' : 'pointer';
+    }
+
+    tools.pen.onclick = () => setTool('pen');
+    tools.select.onclick = () => setTool('select');
+    tools.bucket.onclick = () => setTool('bucket');
+    tools.eraser.onclick = () => setTool('eraser');
+
+    document.getElementById('penStyle').onchange = (e) => penStyle = e.target.value;
+    document.getElementById('colorPicker').oninput = (e) => {
+      currentColor = e.target.value;
+      if (selectedGroup) {
+        saveState();
+        const stroke = selectedGroup.querySelector('.visible-stroke');
+        if (stroke) {
+          if (stroke.tagName === 'polygon' || (stroke.getAttribute('fill') && stroke.getAttribute('fill') !== 'none')) {
+            stroke.setAttribute('fill', currentColor);
+          }
+          if (stroke.getAttribute('stroke') && stroke.getAttribute('stroke') !== 'none') {
+            stroke.setAttribute('stroke', currentColor);
+          }
+        }
+      }
+    };
+
+    document.getElementById('sizeSlider').oninput = (e) => {
+      brushSize = parseFloat(e.target.value);
+      document.getElementById('sizeVal').textContent = brushSize + 'px';
+      if (selectedGroup) {
+        const stroke = selectedGroup.querySelector('.visible-stroke');
+        if (stroke && stroke.getAttribute('stroke-width')) {
+          saveState();
+          stroke.setAttribute('stroke-width', brushSize);
+        }
+      }
+    };
+
+    document.getElementById('smoothSlider').oninput = (e) => {
+      smoothLevel = parseInt(e.target.value, 10) / 100;
+      document.getElementById('smoothVal').textContent = e.target.value + '%';
+    };
+
+    // Selection & Reordering
+    function selectGroup(grp) {
+      deselect();
+      selectedGroup = grp;
+      grp.classList.add('selected');
+    }
+
+    function deselect() {
+      if (selectedGroup) {
+        selectedGroup.classList.remove('selected');
+        selectedGroup = null;
+      }
+    }
+
+    function pageUp() {
+      if (selectedGroup && selectedGroup.nextElementSibling) {
+        saveState();
+        drawLayer.insertBefore(selectedGroup.nextElementSibling, selectedGroup);
+      }
+    }
+
+    function pageDown() {
+      if (selectedGroup && selectedGroup.previousElementSibling) {
+        saveState();
+        drawLayer.insertBefore(selectedGroup, selectedGroup.previousElementSibling);
+      }
+    }
+
+    function deleteObject() {
+      if (selectedGroup) {
+        saveState();
+        selectedGroup.remove();
+        deselect();
+      }
+    }
+
+    document.getElementById('pageUpBtn').onclick = pageUp;
+    document.getElementById('pageDownBtn').onclick = pageDown;
+    document.getElementById('deleteBtn').onclick = deleteObject;
+    document.getElementById('undoBtn').onclick = undo;
+    document.getElementById('redoBtn').onclick = redo;
+    document.getElementById('clearBtn').onclick = () => {
+      saveState();
+      deselect();
+      drawLayer.innerHTML = '';
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'PageUp') { e.preventDefault(); pageUp(); }
+      if (e.key === 'PageDown') { e.preventDefault(); pageDown(); }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (document.activeElement.tagName !== 'INPUT') {
+          e.preventDefault();
+          deleteObject();
+        }
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+      if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    });
+
+    // Coordinates
+    function getCoords(e) {
+      const rect = svg.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (svg.viewBox.baseVal.width / rect.width),
+        y: (e.clientY - rect.top) * (svg.viewBox.baseVal.height / rect.height)
+      };
+    }
+
+    // Mathematical Smoothing Algorithms
+    // 1. Chaikin corner-cutting algorithm: converts jagged segments into smooth curves
+    function chaikinSmooth(pts, iterations) {
+      if (pts.length <= 2 || iterations === 0) return pts;
+      let cur = pts;
+      for (let it = 0; it < iterations; it++) {
+        const smoothed = [cur[0]];
+        for (let i = 0; i < cur.length - 1; i++) {
+          const p0 = cur[i];
+          const p1 = cur[i + 1];
+          smoothed.push({ x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y });
+          smoothed.push({ x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y });
+        }
+        smoothed.push(cur[cur.length - 1]);
+        cur = smoothed;
+      }
+      return cur;
+    }
+
+    function buildSvgPath(pts) {
+      if (pts.length < 2) return '';
+      if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) / 2;
+        const my = (pts[i].y + pts[i + 1].y) / 2;
+        d += ` Q ${pts[i].x} ${pts[i].y}, ${mx} ${my}`;
+      }
+      d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
+      return d;
+    }
+
+    // Calligraphy ribbon contour builder (chisel tip at 45 degree angle)
+    function buildCalligraphyMesh(pts, width) {
+      if (pts.length < 2) return '';
+      const left = [], right = [];
+      const angle = Math.PI / 4; // 45° nib angle
+      const dx = (width / 2) * Math.cos(angle);
+      const dy = (width / 2) * Math.sin(angle);
+
+      for (let p of pts) {
+        left.push(`${p.x - dx},${p.y - dy}`);
+        right.unshift(`${p.x + dx},${p.y + dy}`);
+      }
+      return left.concat(right).join(' ');
+    }
+
+    // Interaction Variables
+    let isDrawing = false;
+    let isDragging = false;
+    let rawPoints = [];
+    let curGroup = null;
+    let dragStart = { x: 0, y: 0 };
+    let initialTransform = { x: 0, y: 0 };
+
+    svg.addEventListener('mousedown', (e) => {
+      const pt = getCoords(e);
+
+      if (activeTool === 'pen') {
+        saveState();
+        isDrawing = true;
+        rawPoints = [pt];
+
+        curGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        curGroup.setAttribute('class', 'stroke-group');
+        curGroup.dataset.pen = penStyle;
+
+        // Wide hit-box tolerance for effortless clicking later
+        const hitBox = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        hitBox.setAttribute('class', 'hit-box');
+        hitBox.setAttribute('fill', 'none');
+        hitBox.setAttribute('stroke', 'transparent');
+        hitBox.setAttribute('stroke-width', Math.max(brushSize + 18, 26));
+        hitBox.setAttribute('stroke-linecap', 'round');
+        hitBox.setAttribute('stroke-linejoin', 'round');
+        hitBox.style.cursor = 'pointer';
+
+        let visible;
+        if (penStyle === 'calligraphy') {
+          visible = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          visible.setAttribute('class', 'visible-stroke');
+          visible.setAttribute('fill', currentColor);
+          visible.setAttribute('opacity', '0.9');
+        } else {
+          visible = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          visible.setAttribute('class', 'visible-stroke');
+          visible.setAttribute('fill', 'none');
+          visible.setAttribute('stroke', currentColor);
+          visible.setAttribute('stroke-width', brushSize);
+          visible.setAttribute('stroke-linecap', 'round');
+          visible.setAttribute('stroke-linejoin', 'round');
+
+          if (penStyle === 'graphite') {
+            visible.setAttribute('filter', 'url(#graphiteFilter)');
+            visible.setAttribute('opacity', '0.75');
+          } else if (penStyle === 'fountain') {
+            visible.setAttribute('opacity', '0.88');
+          }
+        }
+
+        curGroup.appendChild(visible);
+        curGroup.appendChild(hitBox);
+        drawLayer.appendChild(curGroup);
+
+      } else if (activeTool === 'select') {
+        // Deselect if clicking on empty background
+        if (e.target === svg || e.target === drawLayer) {
+          deselect();
+        }
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      const pt = getCoords(e);
+
+      if (isDrawing && activeTool === 'pen') {
+        const last = rawPoints[rawPoints.length - 1];
+        const dist = Math.hypot(pt.x - last.x, pt.y - last.y);
+        
+        // Lazy-mouse spacing based on smoothness setting
+        const minSpacing = 2 + smoothLevel * 14;
+        if (dist < minSpacing) return;
+
+        // Exponential Moving Average interpolation for real-time stroke
+        const factor = 1 - (smoothLevel * 0.75);
+        const filtered = {
+          x: last.x + (pt.x - last.x) * factor,
+          y: last.y + (pt.y - last.y) * factor
+        };
+
+        rawPoints.push(filtered);
+
+        const visible = curGroup.querySelector('.visible-stroke');
+        const hitBox = curGroup.querySelector('.hit-box');
+
+        if (penStyle === 'calligraphy') {
+          visible.setAttribute('points', buildCalligraphyMesh(rawPoints, brushSize));
+          hitBox.setAttribute('d', buildSvgPath(rawPoints));
+        } else {
+          const d = buildSvgPath(rawPoints);
+          visible.setAttribute('d', d);
+          hitBox.setAttribute('d', d);
+        }
+
+      } else if (isDragging && selectedGroup && activeTool === 'select') {
+        const dx = pt.x - dragStart.x;
+        const dy = pt.y - dragStart.y;
+        selectedGroup.setAttribute('transform', `translate(${initialTransform.x + dx}, ${initialTransform.y + dy})`);
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDrawing && curGroup) {
+        // Apply Chaikin smoothing iterations on stroke release
+        const passes = Math.round(smoothLevel * 4); // 0 to 4 smoothing passes
+        const smoothed = chaikinSmooth(rawPoints, passes);
+
+        const visible = curGroup.querySelector('.visible-stroke');
+        const hitBox = curGroup.querySelector('.hit-box');
+
+        if (curGroup.dataset.pen === 'calligraphy') {
+          visible.setAttribute('points', buildCalligraphyMesh(smoothed, brushSize));
+          hitBox.setAttribute('d', buildSvgPath(smoothed));
+        } else {
+          const d = buildSvgPath(smoothed);
+          visible.setAttribute('d', d);
+          hitBox.setAttribute('d', d);
+        }
+
+        bindGroupEvents(curGroup);
+      }
+
+      if (isDragging) {
+        isDragging = false;
+        if (selectedGroup) {
+          // Normalize transform back into coordinates
+          saveState();
+        }
+      }
+
+      isDrawing = false;
+      curGroup = null;
+      rawPoints = [];
+    });
+
+    // Helper: Parse translation
+    function getTranslation(el) {
+      const transform = el.getAttribute('transform');
+      if (!transform) return { x: 0, y: 0 };
+      const match = /translate\(([^,]+),\s*([^)]+)\)/.exec(transform);
+      return match ? { x: parseFloat(match[1]), y: parseFloat(match[2]) } : { x: 0, y: 0 };
+    }
+
+    // Event binding with Hit-Box Tolerance
+    function bindGroupEvents(grp) {
+      const hitBox = grp.querySelector('.hit-box');
+      const target = hitBox || grp;
+
+      target.onmousedown = (e) => {
+        if (activeTool === 'select') {
+          e.stopPropagation();
+          selectGroup(grp);
+          isDragging = true;
+          dragStart = getCoords(e);
+          initialTransform = getTranslation(grp);
+        } else if (activeTool === 'eraser') {
+          e.stopPropagation();
+          saveState();
+          grp.remove();
+          deselect();
+        } else if (activeTool === 'bucket') {
+          e.stopPropagation();
+          saveState();
+          const stroke = grp.querySelector('.visible-stroke');
+          if (stroke) {
+            stroke.setAttribute('fill', currentColor);
+          }
+        }
+      };
+    }
+
+    function rebindAll() {
+      drawLayer.querySelectorAll('.stroke-group').forEach(bindGroupEvents);
+    }
+
+    // Export Handlers
+    document.getElementById('exportSvg').onclick = () => {
+      deselect();
+      const serializer = new XMLSerializer();
+      const source = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(svg);
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'sketch.svg';
+      link.click();
+      URL.revokeObjectURL(url);
+    };
+
+    function exportRaster(format) {
+      deselect();
+      const serializer = new XMLSerializer();
+      const svgStr = serializer.serializeToString(svg);
+      const img = new Image();
+      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = () => {
+        const off = document.createElement('canvas');
+        off.width = svg.viewBox.baseVal.width;
+        off.height = svg.viewBox.baseVal.height;
+        const ctx = off.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, off.width, off.height);
+        ctx.drawImage(img, 0, 0);
+
+        const a = document.createElement('a');
+        a.download = `sketch.${format === 'jpeg' ? 'jpg' : 'png'}`;
+        a.href = off.toDataURL(`image/${format}`, 0.95);
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    }
+
+    document.getElementById('exportPng').onclick = () => exportRaster('png');
+    document.getElementById('exportJpg').onclick = () => exportRaster('jpeg');
+  </script>
+</body>
+</html>
