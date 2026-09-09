@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick Video Maker</title>
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --card-bg: #ffffff;
+      --border: #d0d7de;
+      --text: #24292f;
+      --text-muted: #57606a;
+      --accent: #3584e4;
+      --accent-hover: #226bca;
+      --btn-text: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e20;
+        --card-bg: #2d2d30;
+        --border: #3f3f46;
+        --text: #e4e4e7;
+        --text-muted: #9ca3af;
+        --accent: #3584e4;
+        --accent-hover: #226bca;
+        --btn-text: #ffffff;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Cantarell, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .window {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+      overflow: hidden;
+    }
+    .header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .content { padding: 18px; }
+    .form-group { margin-bottom: 14px; }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: var(--text-muted);
+    }
+    input[type="file"], select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    button {
+      width: 100%;
+      padding: 11px;
+      background: var(--accent);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s ease;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-area {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="window">
+  <div class="header">Audio + Image to Video</div>
+  <div class="content">
+    <div class="form-group">
+      <label for="audioFile">Audio Track (.mp3, .m4a)</label>
+      <input type="file" id="audioFile" accept=".mp3,.m4a,audio/*" />
+    </div>
+
+    <div class="form-group">
+      <label for="imageFile">Cover Image (.jpg, .png, .webp)</label>
+      <input type="file" id="imageFile" accept="image/*" />
+    </div>
+
+    <div class="form-group">
+      <label for="resolution">Video Format</label>
+      <select id="resolution">
+        <option value="1280:720" selected>Landscape HD (1280x720)</option>
+        <option value="1920:1080">Landscape FHD (1920x1080)</option>
+        <option value="854:480">Landscape SD (854x480 - Lightest)</option>
+        <option value="720:1280">Portrait HD (720x1280)</option>
+        <option value="1080:1920">Portrait FHD (1080x1920)</option>
+      </select>
+    </div>
+
+    <button id="renderBtn" onclick="generateVideo()">Export Video</button>
+    <div id="status" class="status-area">Ready</div>
+  </div>
+</div>
+
+<canvas id="offscreenCanvas" style="display:none;"></canvas>
+
+<script>
+  async function generateVideo() {
+    const audioInput = document.getElementById('audioFile').files[0];
+    const imageInput = document.getElementById('imageFile').files[0];
+    const resolution = document.getElementById('resolution').value;
+    const btn = document.getElementById('renderBtn');
+    const status = document.getElementById('status');
+
+    if (!audioInput || !imageInput) {
+      status.innerText = "Please select both an audio file and an image.";
+      return;
+    }
+
+    btn.disabled = true;
+    status.innerText = "Decoding audio file...";
+
+    try {
+      // 1. Setup AudioContext to process audio (mp3 / m4a)
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioCtx.decodeAudioData(await audioInput.arrayBuffer());
+      const duration = audioBuffer.duration;
+
+      // 2. Setup Canvas for Video Frame
+      const [width, height] = resolution.split(':').map(Number);
+      const canvas = document.getElementById('offscreenCanvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      // 3. Load & Scale Cover Image (letterbox preserving aspect ratio)
+      status.innerText = "Processing image...";
+      const img = new Image();
+      const imgUrl = URL.createObjectURL(imageInput);
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = rej;
+        img.src = imgUrl;
+      });
+
+      // Fill background black
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, width, height);
+
+      // Calculate aspect ratio fit
+      const scale = Math.min(width / img.width, height / img.height);
+      const x = (width / 2) - (img.width / 2) * scale;
+      const y = (height / 2) - (img.height / 2) * scale;
+      ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+      URL.revokeObjectURL(imgUrl);
+
+      // 4. Create Stream & Route Audio
+      status.innerText = "Building media stream...";
+      const canvasStream = canvas.captureStream(2); // 2 FPS keeps Sandy Bridge CPU load near zero
+
+      const audioDestination = audioCtx.createMediaStreamDestination();
+      const sourceNode = audioCtx.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.connect(audioDestination);
+
+      const combinedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...audioDestination.stream.getAudioTracks()
+      ]);
+
+      // Check format support
+      let mimeType = 'video/mp4';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=h264';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+        }
+      }
+
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType: mimeType,
+        videoBitsPerSecond: 2500000
+      });
+
+      const chunks = [];
+      recorder.ondataavailable = e => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        status.innerText = "Preparing file download...";
+        const blob = new Blob(chunks, { type: mimeType });
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const exportName = `${audioInput.name.replace(/\.[^/.]+$/, "")}_video.${ext}`;
+
+        // Trigger native Save As dialog
+        if (window.showSaveFilePicker) {
+          try {
+            const handle = await window.showSaveFilePicker({
+              suggestedName: exportName,
+              types: [{
+                description: 'Video File',
+                accept: { [mimeType]: [`.${ext}`] }
+              }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            status.innerText = "Saved successfully!";
+          } catch (e) {
+            fallbackDownload(blob, exportName);
+          }
+        } else {
+          fallbackDownload(blob, exportName);
+        }
+
+        audioCtx.close();
+        btn.disabled = false;
+      };
+
+      // 5. Start real-time pipe & update UI timer
+      recorder.start();
+      sourceNode.start(0);
+
+      const startTime = Date.now();
+      const interval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const progress = Math.min(100, Math.round((elapsed / duration) * 100));
+        status.innerText = `Recording video... ${progress}% (${Math.round(elapsed)}s / ${Math.round(duration)}s)`;
+
+        if (elapsed >= duration) {
+          clearInterval(interval);
+          sourceNode.stop();
+          recorder.stop();
+        }
+      }, 500);
+
+    } catch (err) {
+      console.error(err);
+      status.innerText = "Encoding failed. Ensure files are valid audio/images.";
+      btn.disabled = false;
+    }
+  }
+
+  function fallbackDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    document.getElementById('status').innerText = "Export complete! File downloaded.";
+  }
+</script>
+
+</body>
+</html>
