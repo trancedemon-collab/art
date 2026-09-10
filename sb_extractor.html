@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Storyboard Panel Extractor Pro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f6f6;
+      --header-bg: #e5e5e5;
+      --card-bg: #ffffff;
+      --text: #2e3436;
+      --border: #c8c8c8;
+      --accent: #3584e4;
+      --accent-hover: #1c71d8;
+      --btn-bg: #e0e0e0;
+      --btn-hover: #d0d0d0;
+      --canvas-bg: #2b2b2b;
+      --guide-color: #00d4ff;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #242424;
+        --header-bg: #1e1e1e;
+        --card-bg: #2f2f2f;
+        --text: #eeeeec;
+        --border: #444444;
+        --accent: #3584e4;
+        --accent-hover: #62a0ea;
+        --btn-bg: #383838;
+        --btn-hover: #484848;
+        --canvas-bg: #181818;
+        --guide-color: #00e5ff;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    header {
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .title { font-weight: 700; font-size: 14px; }
+
+    .control-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 8px;
+    }
+
+    label { font-size: 11px; opacity: 0.8; font-weight: 600; text-transform: uppercase; }
+    input[type="number"], select {
+      background: transparent;
+      border: none;
+      color: inherit;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+    input[type="number"] { width: 44px; text-align: center; }
+
+    button, .file-btn {
+      background: var(--btn-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+    button:hover, .file-btn:hover { background: var(--btn-hover); }
+    button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+    button.primary:hover { background: var(--accent-hover); }
+    #file-input { display: none; }
+
+    /* Sub-bar for dynamic modes */
+    #mode-bar {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 5px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .mode-options { display: flex; align-items: center; gap: 8px; }
+
+    main { flex: 1; display: flex; overflow: hidden; }
+
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      background: var(--canvas-bg);
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      user-select: none;
+    }
+
+    .canvas-stage {
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    canvas { display: block; }
+
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: auto;
+    }
+
+    /* Standard Box & Cells */
+    .box-frame {
+      position: absolute;
+      border: 2px dashed #ff4757;
+      background: rgba(255, 71, 87, 0.1);
+      box-sizing: border-box;
+      cursor: pointer;
+    }
+
+    .box-frame.grid-preset {
+      border: 2px dashed var(--accent);
+      background: transparent;
+      cursor: default;
+    }
+
+    .grid-cell {
+      position: absolute;
+      border: 1px solid #ff4757;
+      background: rgba(255, 71, 87, 0.15);
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    .panel-badge {
+      position: absolute;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      top: 3px;
+      left: 3px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    /* Transform Handles */
+    .handle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #ffffff;
+      border: 2px solid var(--accent);
+      border-radius: 2px;
+    }
+    .handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+    .handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+    .handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+    .handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+    .handle.move { top: 50%; left: 50%; transform: translate(-50%, -50%); cursor: move; width: 14px; height: 14px; border-radius: 50%; }
+
+    /* Guides (Ruler lines) */
+    .guide-v, .guide-h {
+      position: absolute;
+      background: var(--guide-color);
+      z-index: 10;
+      box-shadow: 0 0 4px rgba(0, 212, 255, 0.7);
+    }
+    .guide-v { width: 3px; top: 0; bottom: 0; cursor: col-resize; }
+    .guide-h { height: 3px; left: 0; right: 0; cursor: row-resize; }
+
+    #status {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 50;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <span class="title">Storyboard Extractor Pro</span>
+
+    <label class="file-btn" for="file-input">Open Storyboard</label>
+    <input type="file" id="file-input" accept="image/*" />
+
+    <div class="control-group">
+      <label>Mode</label>
+      <select id="tool-mode">
+        <option value="grid">Grid (with Gutters)</option>
+        <option value="freestyle">Freestyle Draw</option>
+        <option value="guides">Guides (Corel-style)</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>Format</label>
+      <select id="export-format">
+        <option value="image/png">PNG</option>
+        <option value="image/jpeg">JPEG (95%)</option>
+      </select>
+    </div>
+
+    <button id="btn-extract" class="primary" style="margin-left: auto;">Extract Panels to ZIP</button>
+  </header>
+
+  <!-- Mode Specific Controls Bar -->
+  <div id="mode-bar">
+    <!-- Grid Controls -->
+    <div id="ctrl-grid" class="mode-options">
+      <div class="control-group">
+        <label>Cols</label>
+        <input type="number" id="cols" min="1" max="12" value="3" />
+        <label>Rows</label>
+        <input type="number" id="rows" min="1" max="12" value="2" />
+      </div>
+      <div class="control-group">
+        <label>Gap X</label>
+        <input type="number" id="gap-x" min="0" max="200" value="12" />
+        <span>px</span>
+        <label>Gap Y</label>
+        <input type="number" id="gap-y" min="0" max="200" value="12" />
+        <span>px</span>
+      </div>
+      <button id="btn-fit-grid">Reset Grid Frame</button>
+    </div>
+
+    <!-- Freestyle Controls -->
+    <div id="ctrl-freestyle" class="mode-options" style="display: none;">
+      <span>Click & drag across any panel to create boxes. Click a box to delete it.</span>
+      <button id="btn-clear-free">Clear All Boxes</button>
+    </div>
+
+    <!-- Guides Controls -->
+    <div id="ctrl-guides" class="mode-options" style="display: none;">
+      <button id="btn-add-vguide">+ Add Vertical Guide</button>
+      <button id="btn-add-hguide">+ Add Horizontal Guide</button>
+      <button id="btn-apply-guides" class="primary">Generate Boxes from Guides</button>
+      <button id="btn-clear-guides">Clear Guides</button>
+    </div>
+  </div>
+
+  <main>
+    <div class="canvas-container" id="container">
+      <div class="canvas-stage" id="stage" style="display: none;">
+        <canvas id="view-canvas"></canvas>
+        <div id="overlay"></div>
+      </div>
+      <div id="status">Open an image to start</div>
+    </div>
+  </main>
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const viewCanvas = document.getElementById('view-canvas');
+    const ctx = viewCanvas.getContext('2d');
+    const stage = document.getElementById('stage');
+    const overlay = document.getElementById('overlay');
+    const statusText = document.getElementById('status');
+    const toolMode = document.getElementById('tool-mode');
+    const exportFormat = document.getElementById('export-format');
+    const btnExtract = document.getElementById('btn-extract');
+
+    // Controls
+    const ctrlGrid = document.getElementById('ctrl-grid');
+    const ctrlFree = document.getElementById('ctrl-freestyle');
+    const ctrlGuides = document.getElementById('ctrl-guides');
+    const colsInput = document.getElementById('cols');
+    const rowsInput = document.getElementById('rows');
+    const gapXInput = document.getElementById('gap-x');
+    const gapYInput = document.getElementById('gap-y');
+    const btnFitGrid = document.getElementById('btn-fit-grid');
+    const btnClearFree = document.getElementById('btn-clear-free');
+    const btnAddVGuide = document.getElementById('btn-add-vguide');
+    const btnAddHGuide = document.getElementById('btn-add-hguide');
+    const btnApplyGuides = document.getElementById('btn-apply-guides');
+    const btnClearGuides = document.getElementById('btn-clear-guides');
+
+    let sourceImg = null;
+    let scale = 1;
+
+    // Grid State
+    let gridBounds = { x: 0, y: 0, w: 0, h: 0 };
+    let activeGridDrag = null;
+    let gridStartPos = { x: 0, y: 0 };
+    let gridStartBounds = { ...gridBounds };
+
+    // Freestyle State
+    let freeBoxes = []; // {x, y, w, h}
+    let isDrawing = false;
+    let drawStart = { x: 0, y: 0 };
+
+    // Guides State
+    let vGuides = []; // x relative to canvas
+    let hGuides = []; // y relative to canvas
+    let activeGuide = null;
+
+    // Load Image
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => {
+        sourceImg = img;
+        stage.style.display = 'block';
+        fitToScreen();
+        initDefaults();
+        render();
+        statusText.textContent = `${img.naturalWidth} x ${img.naturalHeight}px`;
+      };
+      img.src = URL.createObjectURL(file);
+    });
+
+    function fitToScreen() {
+      const maxW = window.innerWidth - 60;
+      const maxH = window.innerHeight - 150;
+      scale = Math.min(maxW / sourceImg.naturalWidth, maxH / sourceImg.naturalHeight, 1);
+      viewCanvas.width = Math.round(sourceImg.naturalWidth * scale);
+      viewCanvas.height = Math.round(sourceImg.naturalHeight * scale);
+      stage.style.width = `${viewCanvas.width}px`;
+      stage.style.height = `${viewCanvas.height}px`;
+      ctx.drawImage(sourceImg, 0, 0, viewCanvas.width, viewCanvas.height);
+    }
+
+    function initDefaults() {
+      gridBounds = {
+        x: viewCanvas.width * 0.05,
+        y: viewCanvas.height * 0.05,
+        w: viewCanvas.width * 0.9,
+        h: viewCanvas.height * 0.9
+      };
+      vGuides = [viewCanvas.width * 0.33, viewCanvas.width * 0.66];
+      hGuides = [viewCanvas.height * 0.5];
+    }
+
+    // Switch tool tabs
+    toolMode.addEventListener('change', () => {
+      const mode = toolMode.value;
+      ctrlGrid.style.display = mode === 'grid' ? 'flex' : 'none';
+      ctrlFree.style.display = mode === 'freestyle' ? 'flex' : 'none';
+      ctrlGuides.style.display = mode === 'guides' ? 'flex' : 'none';
+      render();
+    });
+
+    // Render Overlay according to current mode
+    function render() {
+      if (!sourceImg) return;
+      overlay.innerHTML = '';
+      const mode = toolMode.value;
+
+      if (mode === 'grid') {
+        renderGridUI();
+      } else if (mode === 'freestyle') {
+        renderFreestyleUI();
+      } else if (mode === 'guides') {
+        renderGuidesUI();
+      }
+    }
+
+    // --- MODE 1: GRID WITH GAP/GUTTER ---
+    function renderGridUI() {
+      const gBox = document.createElement('div');
+      gBox.className = 'box-frame grid-preset';
+      gBox.style.left = `${gridBounds.x}px`;
+      gBox.style.top = `${gridBounds.y}px`;
+      gBox.style.width = `${gridBounds.w}px`;
+      gBox.style.height = `${gridBounds.h}px`;
+
+      // Handles
+      ['nw', 'ne', 'sw', 'se', 'move'].forEach(dir => {
+        const h = document.createElement('div');
+        h.className = `handle ${dir}`;
+        h.dataset.handle = dir;
+        gBox.appendChild(h);
+      });
+
+      overlay.appendChild(gBox);
+
+      // Grid Cells with Gutters
+      const cols = parseInt(colsInput.value, 10) || 1;
+      const rows = parseInt(rowsInput.value, 10) || 1;
+      const gapX = parseFloat(gapXInput.value) || 0;
+      const gapY = parseFloat(gapYInput.value) || 0;
+
+      const totalGapW = gapX * (cols - 1);
+      const totalGapH = gapY * (rows - 1);
+      const cellW = Math.max(1, (gridBounds.w - totalGapW) / cols);
+      const cellH = Math.max(1, (gridBounds.h - totalGapH) / rows);
+
+      let idx = 1;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cellX = gridBounds.x + c * (cellW + gapX);
+          const cellY = gridBounds.y + r * (cellH + gapY);
+
+          const cell = document.createElement('div');
+          cell.className = 'grid-cell';
+          cell.style.left = `${cellX}px`;
+          cell.style.top = `${cellY}px`;
+          cell.style.width = `${cellW}px`;
+          cell.style.height = `${cellH}px`;
+
+          const badge = document.createElement('div');
+          badge.className = 'panel-badge';
+          badge.textContent = idx++;
+          cell.appendChild(badge);
+
+          overlay.appendChild(cell);
+        }
+      }
+    }
+
+    // --- MODE 2: FREESTYLE RECTANGLES ---
+    function renderFreestyleUI() {
+      freeBoxes.forEach((b, i) => {
+        const el = document.createElement('div');
+        el.className = 'box-frame';
+        el.style.left = `${b.x}px`;
+        el.style.top = `${b.y}px`;
+        el.style.width = `${b.w}px`;
+        el.style.height = `${b.h}px`;
+        el.title = 'Click to delete';
+
+        const badge = document.createElement('div');
+        badge.className = 'panel-badge';
+        badge.textContent = i + 1;
+        el.appendChild(badge);
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          freeBoxes.splice(i, 1);
+          render();
+        });
+
+        overlay.appendChild(el);
+      });
+    }
+
+    // --- MODE 3: GUIDE LINES ---
+    function renderGuidesUI() {
+      vGuides.forEach((gx, idx) => {
+        const g = document.createElement('div');
+        g.className = 'guide-v';
+        g.style.left = `${gx}px`;
+        g.dataset.type = 'v';
+        g.dataset.idx = idx;
+        overlay.appendChild(g);
+      });
+
+      hGuides.forEach((gy, idx) => {
+        const g = document.createElement('div');
+        g.className = 'guide-h';
+        g.style.top = `${gy}px`;
+        g.dataset.type = 'h';
+        g.dataset.idx = idx;
+        overlay.appendChild(g);
+      });
+    }
+
+    // --- MOUSE DISPATCHER ---
+    overlay.addEventListener('mousedown', (e) => {
+      const mode = toolMode.value;
+      const rect = overlay.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      if (mode === 'grid') {
+        const handle = e.target.dataset.handle;
+        if (handle) {
+          activeGridDrag = handle;
+          gridStartPos = { x: e.clientX, y: e.clientY };
+          gridStartBounds = { ...gridBounds };
+          e.stopPropagation();
+        }
+      } else if (mode === 'freestyle') {
+        isDrawing = true;
+        drawStart = { x: mx, y: my };
+      } else if (mode === 'guides') {
+        if (e.target.dataset.type) {
+          activeGuide = {
+            type: e.target.dataset.type,
+            idx: parseInt(e.target.dataset.idx, 10)
+          };
+          e.stopPropagation();
+        }
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      const mode = toolMode.value;
+      const rect = overlay.getBoundingClientRect();
+      const mx = Math.max(0, Math.min(viewCanvas.width, e.clientX - rect.left));
+      const my = Math.max(0, Math.min(viewCanvas.height, e.clientY - rect.top));
+
+      if (mode === 'grid' && activeGridDrag) {
+        const dx = e.clientX - gridStartPos.x;
+        const dy = e.clientY - gridStartPos.y;
+        if (activeGridDrag === 'move') {
+          gridBounds.x = Math.max(0, Math.min(viewCanvas.width - gridBounds.w, gridStartBounds.x + dx));
+          gridBounds.y = Math.max(0, Math.min(viewCanvas.height - gridBounds.h, gridStartBounds.y + dy));
+        } else {
+          if (activeGridDrag.includes('e')) gridBounds.w = Math.max(40, Math.min(viewCanvas.width - gridBounds.x, gridStartBounds.w + dx));
+          if (activeGridDrag.includes('s')) gridBounds.h = Math.max(40, Math.min(viewCanvas.height - gridBounds.y, gridStartBounds.h + dy));
+          if (activeGridDrag.includes('w')) {
+            const newW = Math.max(40, gridStartBounds.w - dx);
+            gridBounds.x = gridStartBounds.x + (gridStartBounds.w - newW);
+            gridBounds.w = newW;
+          }
+          if (activeGridDrag.includes('n')) {
+            const newH = Math.max(40, gridStartBounds.h - dy);
+            gridBounds.y = gridStartBounds.y + (gridStartBounds.h - newH);
+            gridBounds.h = newH;
+          }
+        }
+        render();
+      } else if (mode === 'freestyle' && isDrawing) {
+        let temp = document.getElementById('temp-draw');
+        if (!temp) {
+          temp = document.createElement('div');
+          temp.id = 'temp-draw';
+          temp.className = 'box-frame';
+          overlay.appendChild(temp);
+        }
+        const x = Math.min(drawStart.x, mx);
+        const y = Math.min(drawStart.y, my);
+        const w = Math.abs(mx - drawStart.x);
+        const h = Math.abs(my - drawStart.y);
+        temp.style.left = `${x}px`;
+        temp.style.top = `${y}px`;
+        temp.style.width = `${w}px`;
+        temp.style.height = `${h}px`;
+      } else if (mode === 'guides' && activeGuide) {
+        if (activeGuide.type === 'v') vGuides[activeGuide.idx] = mx;
+        if (activeGuide.type === 'h') hGuides[activeGuide.idx] = my;
+        render();
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      const mode = toolMode.value;
+      if (mode === 'grid') {
+        activeGridDrag = null;
+      } else if (mode === 'freestyle' && isDrawing) {
+        isDrawing = false;
+        const temp = document.getElementById('temp-draw');
+        if (temp) {
+          const rect = overlay.getBoundingClientRect();
+          const mx = Math.max(0, Math.min(viewCanvas.width, e.clientX - rect.left));
+          const my = Math.max(0, Math.min(viewCanvas.height, e.clientY - rect.top));
+          const w = Math.abs(mx - drawStart.x);
+          const h = Math.abs(my - drawStart.y);
+          if (w > 15 && h > 15) {
+            freeBoxes.push({
+              x: Math.min(drawStart.x, mx),
+              y: Math.min(drawStart.y, my),
+              w,
+              h
+            });
+          }
+          temp.remove();
+          render();
+        }
+      } else if (mode === 'guides') {
+        activeGuide = null;
+      }
+    });
+
+    // --- INPUT CONTROLS ---
+    [colsInput, rowsInput, gapXInput, gapYInput].forEach(el => el.addEventListener('input', render));
+    btnFitGrid.addEventListener('click', () => { initDefaults(); render(); });
+    btnClearFree.addEventListener('click', () => { freeBoxes = []; render(); });
+
+    btnAddVGuide.addEventListener('click', () => {
+      vGuides.push(viewCanvas.width / 2);
+      render();
+    });
+    btnAddHGuide.addEventListener('click', () => {
+      hGuides.push(viewCanvas.height / 2);
+      render();
+    });
+    btnClearGuides.addEventListener('click', () => {
+      vGuides = [];
+      hGuides = [];
+      render();
+    });
+
+    // Convert Guide intersections into Freestyle Boxes
+    btnApplyGuides.addEventListener('click', () => {
+      const xs = [0, ...vGuides.slice().sort((a, b) => a - b), viewCanvas.width];
+      const ys = [0, ...hGuides.slice().sort((a, b) => a - b), viewCanvas.height];
+
+      freeBoxes = [];
+      for (let r = 0; r < ys.length - 1; r++) {
+        for (let c = 0; c < xs.length - 1; c++) {
+          freeBoxes.push({
+            x: xs[c],
+            y: ys[r],
+            w: xs[c + 1] - xs[c],
+            h: ys[r + 1] - ys[r]
+          });
+        }
+      }
+      toolMode.value = 'freestyle';
+      toolMode.dispatchEvent(new Event('change'));
+      statusText.textContent = `Generated ${freeBoxes.length} panel boxes from guides.`;
+    });
+
+    // --- EXTRACTION ENGINE ---
+    btnExtract.addEventListener('click', async () => {
+      if (!sourceImg) return alert('Load an image first.');
+
+      const mode = toolMode.value;
+      let extractCrops = [];
+
+      if (mode === 'grid') {
+        const cols = parseInt(colsInput.value, 10) || 1;
+        const rows = parseInt(rowsInput.value, 10) || 1;
+        const gapX = parseFloat(gapXInput.value) || 0;
+        const gapY = parseFloat(gapYInput.value) || 0;
+        const totalGapW = gapX * (cols - 1);
+        const totalGapH = gapY * (rows - 1);
+        const cellW = (gridBounds.w - totalGapW) / cols;
+        const cellH = (gridBounds.h - totalGapH) / rows;
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            extractCrops.push({
+              x: (gridBounds.x + c * (cellW + gapX)) / scale,
+              y: (gridBounds.y + r * (cellH + gapY)) / scale,
+              w: cellW / scale,
+              h: cellH / scale
+            });
+          }
+        }
+      } else {
+        // Freestyle or Guide-generated boxes
+        if (freeBoxes.length === 0) return alert('No panels selected. Draw some boxes first.');
+        extractCrops = freeBoxes.map(b => ({
+          x: b.x / scale,
+          y: b.y / scale,
+          w: b.w / scale,
+          h: b.h / scale
+        }));
+      }
+
+      const mime = exportFormat.value;
+      const ext = mime === 'image/jpeg' ? 'jpg' : 'png';
+      const zip = new JSZip();
+
+      statusText.textContent = `Extracting ${extractCrops.length} panels...`;
+
+      extractCrops.forEach((c, idx) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(c.w);
+        canvas.height = Math.round(c.h);
+        const ctxExport = canvas.getContext('2d');
+
+        ctxExport.drawImage(
+          sourceImg,
+          Math.round(c.x),
+          Math.round(c.y),
+          Math.round(c.w),
+          Math.round(c.h),
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+
+        const dataUrl = canvas.toDataURL(mime, 0.95);
+        zip.file(`panel_${String(idx + 1).padStart(2, '0')}.${ext}`, dataUrl.split(',')[1], { base64: true });
+      });
+
+      statusText.textContent = 'Building ZIP...';
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const dl = document.createElement('a');
+      dl.href = URL.createObjectURL(zipBlob);
+      dl.download = `panels_extracted_${Date.now()}.zip`;
+      dl.click();
+
+      statusText.textContent = `Extracted ${extractCrops.length} full-resolution panels.`;
+    });
+  </script>
+</body>
+</html>
